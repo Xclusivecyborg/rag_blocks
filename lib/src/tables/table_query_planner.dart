@@ -57,33 +57,44 @@ abstract final class TableQueryPlanner {
   ];
 
   /// Question words mapped to column-name words, so "sales" can reach a
-  /// `revenue_ngn` column. Kept short on purpose: every synonym is another
+  /// `revenue` column. Kept short on purpose: every synonym is another
   /// question the planner might wrongly claim.
-  static const Map<String, List<String>> _synonyms = {
+  ///
+  /// Pass your own `synonyms` to [answer] or [planFor] for the words your
+  /// users and columns use, such as `{'naira': ['ngn']}`.
+  static const Map<String, List<String>> defaultSynonyms = {
     'sales': ['revenue'],
     'earned': ['revenue'],
     'income': ['revenue'],
     'turnover': ['revenue'],
-    'naira': ['ngn'],
     'sold': ['units', 'sold'],
     'returns': ['returned'],
     'refunds': ['returned'],
-    'price': ['price'],
   };
 
   /// Answers an aggregation question ("total revenue in January") exactly
   /// from the first of [tables] that can. Null when none can answer or no
   /// rows matched, so the caller falls back to retrieval.
-  static QueryResult? answer(List<CsvTable> tables, String question) {
+  static QueryResult? answer(
+    List<CsvTable> tables,
+    String question, {
+    Map<String, List<String>> synonyms = defaultSynonyms,
+  }) {
     for (final table in tables) {
-      final query = planFor(table, question);
+      final query = planFor(table, question, synonyms: synonyms);
       final result = query == null ? null : table.aggregate(query);
       if (result != null && !result.isEmpty) return result;
     }
     return null;
   }
 
-  static TableQuery? planFor(CsvTable table, String question) {
+  /// The query [question] asks of [table], or null when it is not clearly a
+  /// calculation over one of its columns. See [answer].
+  static TableQuery? planFor(
+    CsvTable table,
+    String question, {
+    Map<String, List<String>> synonyms = defaultSynonyms,
+  }) {
     if (table.rowCount == 0) return null;
     final q = question.toLowerCase();
 
@@ -92,12 +103,15 @@ abstract final class TableQueryPlanner {
 
     final metric = aggregate == Aggregate.count
         ? null
-        : _findMetricColumn(table, q);
+        : _findMetricColumn(table, q, synonyms);
     // "How much annual leave do staff get?" has an aggregation word but no
     // matching column, so it is not a table question.
     if (aggregate != Aggregate.count && metric == null) return null;
 
     final filters = _findFilters(table, question);
+    // "How many records for Lekki?" asks about a place this table does not
+    // have. Ignoring the name would count every row, so decline instead.
+    if (_namesSomethingMissing(table, question, synonyms)) return null;
     return TableQuery(
       aggregate: aggregate,
       metric: metric?.name,
@@ -120,9 +134,13 @@ abstract final class TableQueryPlanner {
   /// The numeric column whose name best matches the question. Null on a tie,
   /// because guessing between `revenue_ngn` and `unit_price_ngn` gives a
   /// plausible, wrong number.
-  static CsvColumn? _findMetricColumn(CsvTable table, String q) {
+  static CsvColumn? _findMetricColumn(
+    CsvTable table,
+    String q,
+    Map<String, List<String>> synonyms,
+  ) {
     final words = q.split(RegExp(r'[^a-z0-9]+')).toSet();
-    final expanded = {...words, for (final w in words) ...?_synonyms[w]};
+    final expanded = {...words, for (final w in words) ...?synonyms[w]};
 
     CsvColumn? best;
     var bestScore = 0;
@@ -159,6 +177,45 @@ abstract final class TableQueryPlanner {
     }
     return filters;
   }
+
+  /// A capitalised name after "for", "in", "at" or "from", as in "revenue
+  /// for Lekki" or "sales at Port Harcourt". This is where questions name
+  /// the rows they want, so a name found there must match something in the
+  /// table. Names elsewhere ("Acme's revenue") are not checked, and neither
+  /// are lower-case ones, which cannot be told apart from ordinary words.
+  static final RegExp _namedAfterPreposition = RegExp(
+    r'\b(?:[Ff]or|[Ii]n|[Aa]t|[Ff]rom)\s+(?:the\s+)?([A-Z][A-Za-z0-9-]*)',
+  );
+
+  /// True if [question] names something, the way [_namedAfterPreposition]
+  /// describes, that is not a value, column, month or quarter in [table].
+  static bool _namesSomethingMissing(
+    CsvTable table,
+    String question,
+    Map<String, List<String>> synonyms,
+  ) {
+    final names = [
+      for (final m in _namedAfterPreposition.allMatches(question)) m.group(1)!,
+    ];
+    if (names.isEmpty) return false;
+    final known = <String>{
+      ..._months,
+      'q1',
+      'q2',
+      'q3',
+      'q4',
+      for (final col in table.columns) ...col.nameWords,
+      for (final col in table.textColumns)
+        for (final value in table.distinctValues(col)) ..._words(value),
+      for (final MapEntry(:key, :value) in synonyms.entries) ...[key, ...value],
+    };
+    return names.any((name) => !_words(name).every(known.contains));
+  }
+
+  static Iterable<String> _words(String text) => text
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((w) => w.isNotEmpty);
 
   /// "january 2026", "q1 2026" or "2026". A year is required, so a bare month
   /// never silently covers every year in the data.

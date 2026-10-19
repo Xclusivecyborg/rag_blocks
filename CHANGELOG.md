@@ -1,9 +1,3 @@
-## Unreleased
-
-- `OllamaLauncher` starts and stops Ollama on Windows: it finds `ollama.exe`
-  in the installer's folder, Program Files or on PATH, and stops it with
-  `taskkill`, tray app first.
-
 ## 0.1.0
 
 First release, extracted from the local_rag demo app.
@@ -12,10 +6,19 @@ First release, extracted from the local_rag demo app.
   character offsets for every chunk.
 - `csvToProse`, which rewrites CSV rows as labelled sentences that embed well.
 - `CsvTable` and `TableQueryPlanner`, for computing totals, averages, counts
-  and breakdowns over every row instead of retrieving a few.
+  and breakdowns over every row instead of retrieving a few. The planner
+  takes custom `synonyms`, and declines questions that name something the
+  table doesn't have.
 - `QueryCondenser`, which rewrites long questions and follow-ups into short
   search queries, and falls back to the original question on any failure.
+  Its `systemPrompt` can be replaced with examples from your own documents.
 - `OllamaClient` with `chat`, `chatStream`, `embed` and `connect`, and
-  `OllamaLauncher` to start and stop `ollama serve` on macOS and Linux.
-- The `VectorStore` interface and `capPerSource`.
+  `OllamaLauncher` to start and stop `ollama serve` on macOS, Linux and
+  Windows. On Windows it finds `ollama.exe` in the installer's folder,
+  Program Files or on PATH, and stops it with `taskkill`, tray app first.
+- `SimilarityRanker`, which finds the chunks closest in meaning to a
+  question, with `top`, `maxPerSource` and `minScore` options, and
+  `bestPieces` to join the results' text for a prompt.
+- The `VectorStore` interface, a ready-made `InMemoryVectorStore`,
+  `cosineSimilarity` and `capPerSource`.
 - `findSupportedFiles` for loading a folder of documents.
