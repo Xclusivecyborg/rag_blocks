@@ -254,6 +254,23 @@ void main() {
       expect(TableQueryPlanner.planFor(t, 'total ngn in 2026'), isNull);
     });
 
+    test('synonyms can be supplied for your own words', () {
+      final t = CsvTable.parse(
+        'date,amount\n2026-01-05,10\n2026-02-02,5\n',
+        source: 'spend.csv',
+      );
+      const question = 'total spend in 2026';
+      expect(TableQueryPlanner.answer([t], question), isNull);
+      final result = TableQueryPlanner.answer(
+        [t],
+        question,
+        synonyms: const {
+          'spend': ['amount'],
+        },
+      );
+      expect(result!.value, 15);
+    });
+
     test('an empty table is declined', () {
       final t = CsvTable.parse('a,b\n', source: 'empty.csv');
       expect(TableQueryPlanner.planFor(t, 'total a'), isNull);

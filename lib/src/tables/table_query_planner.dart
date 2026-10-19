@@ -57,33 +57,44 @@ abstract final class TableQueryPlanner {
   ];
 
   /// Question words mapped to column-name words, so "sales" can reach a
-  /// `revenue_ngn` column. Kept short on purpose: every synonym is another
+  /// `revenue` column. Kept short on purpose: every synonym is another
   /// question the planner might wrongly claim.
-  static const Map<String, List<String>> _synonyms = {
+  ///
+  /// Pass your own `synonyms` to [answer] or [planFor] for the words your
+  /// users and columns use, such as `{'naira': ['ngn']}`.
+  static const Map<String, List<String>> defaultSynonyms = {
     'sales': ['revenue'],
     'earned': ['revenue'],
     'income': ['revenue'],
     'turnover': ['revenue'],
-    'naira': ['ngn'],
     'sold': ['units', 'sold'],
     'returns': ['returned'],
     'refunds': ['returned'],
-    'price': ['price'],
   };
 
   /// Answers an aggregation question ("total revenue in January") exactly
   /// from the first of [tables] that can. Null when none can answer or no
   /// rows matched, so the caller falls back to retrieval.
-  static QueryResult? answer(List<CsvTable> tables, String question) {
+  static QueryResult? answer(
+    List<CsvTable> tables,
+    String question, {
+    Map<String, List<String>> synonyms = defaultSynonyms,
+  }) {
     for (final table in tables) {
-      final query = planFor(table, question);
+      final query = planFor(table, question, synonyms: synonyms);
       final result = query == null ? null : table.aggregate(query);
       if (result != null && !result.isEmpty) return result;
     }
     return null;
   }
 
-  static TableQuery? planFor(CsvTable table, String question) {
+  /// The query [question] asks of [table], or null when it is not clearly a
+  /// calculation over one of its columns. See [answer].
+  static TableQuery? planFor(
+    CsvTable table,
+    String question, {
+    Map<String, List<String>> synonyms = defaultSynonyms,
+  }) {
     if (table.rowCount == 0) return null;
     final q = question.toLowerCase();
 
@@ -92,7 +103,7 @@ abstract final class TableQueryPlanner {
 
     final metric = aggregate == Aggregate.count
         ? null
-        : _findMetricColumn(table, q);
+        : _findMetricColumn(table, q, synonyms);
     // "How much annual leave do staff get?" has an aggregation word but no
     // matching column, so it is not a table question.
     if (aggregate != Aggregate.count && metric == null) return null;
@@ -120,9 +131,13 @@ abstract final class TableQueryPlanner {
   /// The numeric column whose name best matches the question. Null on a tie,
   /// because guessing between `revenue_ngn` and `unit_price_ngn` gives a
   /// plausible, wrong number.
-  static CsvColumn? _findMetricColumn(CsvTable table, String q) {
+  static CsvColumn? _findMetricColumn(
+    CsvTable table,
+    String q,
+    Map<String, List<String>> synonyms,
+  ) {
     final words = q.split(RegExp(r'[^a-z0-9]+')).toSet();
-    final expanded = {...words, for (final w in words) ...?_synonyms[w]};
+    final expanded = {...words, for (final w in words) ...?synonyms[w]};
 
     CsvColumn? best;
     var bestScore = 0;
