@@ -202,7 +202,8 @@ You can read the same details in code: `result.value`, `result.groups` and
 
 - **Which column:** it matches words in the question against column names.
   "revenue" finds `revenue_ngn`, and a few everyday words are understood
-  too ("sales" and "income" mean revenue).
+  too ("sales" and "income" mean revenue). Teach it your own words with
+  `synonyms`, shown below.
 - **Which rows:** any value from the spreadsheet that appears in the
   question becomes a filter, such as "Heritage" or "Online".
 - **Which dates:** "January 2026", "Q1 2026" or "2026". A **year is
@@ -214,6 +215,29 @@ question isn't clearly a calculation, or when two columns match equally
 well. That's on purpose: "How much annual leave do staff get?" contains "how
 much" but must not come back as the sum of a sales column. When you get
 `null`, use the normal search instead.
+
+It also declines when the question asks about something the spreadsheet
+doesn't have. "How many records for Lekki?" returns `null` when there's no
+Lekki in the file, instead of quietly counting every row. It checks
+capitalised names after "for", "in", "at" or "from", which is where
+questions usually name what they want.
+
+**Your own words.** If your users say "spend" and the column is called
+`amount`, tell the planner:
+
+```dart
+final result = TableQueryPlanner.answer(
+  [expenses],
+  'Total spend in 2026',
+  synonyms: {
+    ...TableQueryPlanner.defaultSynonyms,
+    'spend': ['amount'],
+  },
+);
+```
+
+Keep the list short: every extra word is another question the planner
+might claim when it shouldn't.
 
 You can also skip the question reading and ask directly:
 
@@ -298,6 +322,26 @@ Settings: `QueryCondenser(ollama, timeout: Duration(seconds: 10))` controls
 how long to wait. If you use a "thinking" model (one that reasons before it
 answers), pass `thinkingModel: true` to skip the reasoning; a rewrite this
 small doesn't need it.
+
+**Teaching it your documents.** The instructions sent to the model include a
+few generic examples. Small models follow examples closely, so examples
+from your own documents give better rewrites. Start from the default and
+swap the examples:
+
+```dart
+final condenser = QueryCondenser(
+  ollama,
+  systemPrompt: QueryCondenser.defaultSystemPrompt.replaceFirst(
+    'Q: Could you please tell me what the warranty covers for the X200 laptop?\n'
+        'X200 laptop warranty coverage',
+    'Q: What is the returns window for the Heritage line?\n'
+        'Heritage line returns window',
+  ),
+);
+```
+
+Whatever you write, keep asking for the query alone on one line. Replies
+that add explanations are rejected, and the original question is used.
 
 ### Talking to the AI: `OllamaClient`
 
@@ -641,9 +685,10 @@ Knowing the limits saves you debugging time:
   [Keeping passages in a database](#keeping-passages-in-a-database-vectorstore)).
 - **The table planner reads English**, and understands a fixed set of
   words. Unusual phrasing returns `null`, which is safe but means no exact
-  figure. A name that isn't in the spreadsheet (like a branch that doesn't
-  exist) is ignored rather than rejected, so check `result.query.describe()`
-  if a figure looks too large.
+  figure. A name that isn't in the spreadsheet is only caught when it's
+  capitalised and follows "for", "in", "at" or "from". Others, such as a
+  lower-case "lekki", are ignored, so check `result.query.describe()` if a
+  figure looks too large.
 - **No web apps.** It runs in command-line tools, servers and Flutter apps,
   but not in a browser.
 - **Comma-separated files only.** Files separated by tabs or semicolons
