@@ -75,7 +75,9 @@ class SimilarityRanker {
   ///   which is a good moment to answer "I don't know". The right value
   ///   depends on the model; with `all-minilm`, around 0.3 is a fair start.
   ///
-  /// Returns an empty list when nothing has been added.
+  /// Returns an empty list when nothing has been added. Use
+  /// [RankedChunks.bestPieces] on the result to get the text alone, ready to
+  /// paste into a prompt.
   Future<List<ScoredChunk>> rank(
     String question, {
     int top = 5,
@@ -93,4 +95,16 @@ class SimilarityRanker {
         if (minScore == null || hit.score >= minScore) hit,
     ];
   }
+}
+
+/// Shortcuts on the list that [SimilarityRanker.rank] returns.
+extension RankedChunks on List<ScoredChunk> {
+  /// The text of every chunk, best first, separated by blank lines. Ready to
+  /// paste into a prompt as the excerpts to answer from. Empty when the list
+  /// is empty.
+  ///
+  /// ```dart
+  /// final excerpts = (await ranker.rank(question, top: 2)).bestPieces;
+  /// ```
+  String get bestPieces => map((match) => match.chunk.text).join('\n\n');
 }
