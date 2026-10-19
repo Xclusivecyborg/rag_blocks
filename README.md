@@ -231,9 +231,8 @@ do when answers go wrong.
 
 ## Where it runs
 
-Command-line tools, servers and Flutter apps on macOS, Linux and Windows.
-On Windows, start Ollama yourself for now; everything else works the same.
-Web apps aren't supported yet.
+Command-line tools, servers and Flutter apps on macOS, Linux and Windows,
+including starting and stopping Ollama. Web apps aren't supported yet.
 
 ## Running the tests
 

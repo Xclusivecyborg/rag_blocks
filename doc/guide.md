@@ -448,10 +448,11 @@ Things to know:
 
 - Ollama keeps running after your app quits. That's deliberate, so the
   next launch is instant.
-- `stop` also closes the Ollama menu-bar app on macOS, because otherwise it
-  starts the server again a second later.
-- Starting and stopping works on macOS and Linux. On Windows, start Ollama
-  yourself. Everything else in the package works the same.
+- `stop` also closes the Ollama menu-bar app on macOS, or the tray app on
+  Windows, because otherwise it starts the server again a second later.
+- Starting and stopping works on macOS, Linux and Windows. On Windows it
+  looks for `ollama.exe` where the official installer puts it, then in
+  Program Files, then anywhere on your PATH.
 - A Mac app from the App Store "sandbox" isn't allowed to start other
   programs. To use the launcher in a Mac app, set
   `com.apple.security.app-sandbox` to `false` in its entitlements file.
@@ -634,7 +635,7 @@ If you change the embedding model, index your documents again (see
 |---|---|---|---|
 | Splitting, CSV, tables, query condenser | ✅ | ✅ | ✅ |
 | `OllamaClient` and `findSupportedFiles` | ✅ | ✅ | ✅ |
-| `OllamaLauncher` (start / stop) | ✅ | ✅ | ❌ start Ollama yourself |
+| `OllamaLauncher` (start / stop) | ✅ | ✅ | ✅ |
 
 Web apps aren't supported yet, because parts of the package use features
 only available outside the browser.

@@ -13,7 +13,9 @@ First release, extracted from the local_rag demo app.
   search queries, and falls back to the original question on any failure.
   Its `systemPrompt` can be replaced with examples from your own documents.
 - `OllamaClient` with `chat`, `chatStream`, `embed` and `connect`, and
-  `OllamaLauncher` to start and stop `ollama serve` on macOS and Linux.
+  `OllamaLauncher` to start and stop `ollama serve` on macOS, Linux and
+  Windows. On Windows it finds `ollama.exe` in the installer's folder,
+  Program Files or on PATH, and stops it with `taskkill`, tray app first.
 - `SimilarityRanker`, which finds the chunks closest in meaning to a
   question, with `top`, `maxPerSource` and `minScore` options, and
   `bestPieces` to join the results' text for a prompt.
