@@ -148,6 +148,35 @@ void main() {
     });
   });
 
+  group('breakdowns use the same aggregate as the headline', () {
+    final t = CsvTable.parse(
+      'location,revenue\nIkeja,10\nIkeja,20\nLekki,15\n',
+      source: 'x.csv',
+    );
+    Map<String, num>? groupsFor(Aggregate aggregate) => t
+        .aggregate(
+          TableQuery(
+            aggregate: aggregate,
+            metric: aggregate == Aggregate.count ? null : 'revenue',
+            groupBy: 'location',
+          ),
+        )!
+        .groups;
+
+    test('average', () {
+      expect(groupsFor(Aggregate.average), {'Ikeja': 15, 'Lekki': 15});
+    });
+
+    test('max and min', () {
+      expect(groupsFor(Aggregate.max), {'Ikeja': 20, 'Lekki': 15});
+      expect(groupsFor(Aggregate.min), {'Ikeja': 10, 'Lekki': 15});
+    });
+
+    test('count', () {
+      expect(groupsFor(Aggregate.count), {'Ikeja': 2, 'Lekki': 1});
+    });
+  });
+
   group('the planner declines when it should', () {
     test('prose questions are not aggregations', () {
       for (final q in [

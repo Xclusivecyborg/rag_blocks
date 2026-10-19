@@ -92,35 +92,42 @@ class CsvTable {
         if (_matches(r, query)) r,
     ];
     final values = <num>[];
-    final groups = <String, num>{};
+    final groupValues = <String, List<num>>{};
     for (final r in matched) {
       final n = isCount ? 1 : number(r, metric!);
       if (n == null) continue;
       values.add(n);
       if (groupColumn != null) {
-        final key = cell(r, groupColumn);
-        groups[key] = (groups[key] ?? 0) + n;
+        (groupValues[cell(r, groupColumn)] ??= []).add(n);
       }
     }
-
-    final num value = values.isEmpty
-        ? 0
-        : switch (query.aggregate) {
-            Aggregate.sum => values.reduce((a, b) => a + b),
-            Aggregate.average => values.reduce((a, b) => a + b) / values.length,
-            Aggregate.min => values.reduce((a, b) => a < b ? a : b),
-            Aggregate.max => values.reduce((a, b) => a > b ? a : b),
-            Aggregate.count => values.length,
-          };
 
     return QueryResult(
       query: query,
       source: source,
-      value: value,
+      value: _reduce(query.aggregate, values),
       matchedRows: matched.length,
       totalRows: rows.length,
-      groups: groupColumn == null ? null : groups,
+      // Each group gets the same aggregate as the headline figure, so an
+      // average broken down by location lists each location's average.
+      groups: groupColumn == null
+          ? null
+          : {
+              for (final MapEntry(:key, :value) in groupValues.entries)
+                key: _reduce(query.aggregate, value),
+            },
     );
+  }
+
+  static num _reduce(Aggregate aggregate, List<num> values) {
+    if (values.isEmpty) return 0;
+    return switch (aggregate) {
+      Aggregate.sum => values.reduce((a, b) => a + b),
+      Aggregate.average => values.reduce((a, b) => a + b) / values.length,
+      Aggregate.min => values.reduce((a, b) => a < b ? a : b),
+      Aggregate.max => values.reduce((a, b) => a > b ? a : b),
+      Aggregate.count => values.length,
+    };
   }
 
   bool _matches(int row, TableQuery query) {
@@ -274,6 +281,7 @@ class QueryResult {
   final num value;
   final int matchedRows;
   final int totalRows;
+  /// The aggregate per value of [TableQuery.groupBy], when it is set.
   final Map<String, num>? groups;
 
   bool get isEmpty => matchedRows == 0;
