@@ -486,6 +486,43 @@ void main() {
       ]);
     });
 
+    test('forces at once when nothing accepts the polite taskkill', () async {
+      // A console `ollama serve` has no window to close, so plain taskkill
+      // fails; waiting out shutdownTimeout before /F would gain nothing.
+      var serving = true;
+      final commands = <List<String>>[];
+      final l = OllamaLauncher(
+        clientThatIsUp(() => serving),
+        searchPaths: <String>[Platform.resolvedExecutable],
+        spawn: (_) async => 4242,
+        isWindows: true,
+        run: (exe, args) async {
+          commands.add(<String>[exe, ...args]);
+          if (exe == 'tasklist') {
+            return ProcessResult(0, 0, rows('ollama.exe', [9001]), '');
+          }
+          if (args.first != '/F') {
+            return ProcessResult(0, 1, '', 'can only be terminated forcefully');
+          }
+          serving = false;
+          return ProcessResult(0, 0, '', '');
+        },
+        shutdownTimeout: const Duration(seconds: 5),
+        pollInterval: const Duration(milliseconds: 25),
+        restartGrace: const Duration(milliseconds: 100),
+      );
+
+      final sw = Stopwatch()..start();
+      expect(await l.stop(), StopOutcome.stopped);
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+      expect(taskkills(commands).last, <String>[
+        'taskkill',
+        '/F',
+        '/PID',
+        '9001',
+      ]);
+    });
+
     test('signals the tray app before its server', () async {
       // The tray app restarts a dead server, so it has to go first.
       final s = stoppable(diesOnTerm: true, trayPids: <int>[500]);

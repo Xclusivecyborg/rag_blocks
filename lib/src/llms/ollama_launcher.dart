@@ -200,7 +200,9 @@ class OllamaLauncher {
       (true, 'Not responding — forcing…'),
     ]) {
       onStatus?.call(message);
-      await _signal(pids, force: force);
+      // Nothing took the polite signal, so waiting for it is pointless.
+      // `taskkill` without /F always refuses a console `ollama serve`.
+      if (!await _signal(pids, force: force) && !force) continue;
       if (await _waitUntilDown()) {
         _spawnedPid = null;
         return await _staysDown() ? StopOutcome.stopped : StopOutcome.restarted;
@@ -282,19 +284,20 @@ class OllamaLauncher {
   }
 
   /// SIGTERM, or SIGKILL when [force]; `taskkill` and `taskkill /F` on
-  /// Windows.
-  Future<void> _signal(List<int> pids, {required bool force}) async {
+  /// Windows. True if any process accepted it.
+  Future<bool> _signal(List<int> pids, {required bool force}) async {
+    var delivered = false;
     for (final target in pids) {
       try {
-        if (isWindows) {
-          await _run('taskkill', [if (force) '/F', '/PID', '$target']);
-        } else {
-          await _run('/bin/kill', [force ? '-KILL' : '-TERM', '$target']);
-        }
+        final result = isWindows
+            ? await _run('taskkill', [if (force) '/F', '/PID', '$target'])
+            : await _run('/bin/kill', [force ? '-KILL' : '-TERM', '$target']);
+        if (result.exitCode == 0) delivered = true;
       } on Object {
         // Already gone or not ours; _waitUntilDown decides.
       }
     }
+    return delivered;
   }
 
   /// Waits for the port to go quiet, which is the only reliable sign that
