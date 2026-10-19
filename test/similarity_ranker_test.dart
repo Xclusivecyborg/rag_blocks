@@ -118,4 +118,22 @@ void main() {
   test('top must be positive', () {
     expect(() => ranker.rank('returns', top: 0), throwsArgumentError);
   });
+
+  group('bestPieces', () {
+    test('joins the ranked texts, best first, with blank lines', () async {
+      final best = await ranker.rank('annual leave', top: 2);
+      expect(best.bestPieces, '${best[0].chunk.text}\n\n${best[1].chunk.text}');
+      expect(best.bestPieces, startsWith('Staff get 20 days of annual leave.'));
+    });
+
+    test('works straight on the result of rank', () async {
+      final excerpts = (await ranker.rank('annual leave', top: 1)).bestPieces;
+      expect(excerpts, 'Staff get 20 days of annual leave.');
+    });
+
+    test('is empty when nothing matched', () async {
+      final none = await ranker.rank('annual leave', minScore: 2);
+      expect(none.bestPieces, isEmpty);
+    });
+  });
 }

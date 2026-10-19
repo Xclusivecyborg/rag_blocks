@@ -165,4 +165,42 @@ void main() {
       expect(r.text, long);
     });
   });
+
+  group('the prompt', () {
+    Future<String> systemPromptSent(
+      QueryCondenser Function(OllamaClient) make,
+    ) async {
+      String? sent;
+      final client = OllamaClient(
+        client: MockClient((req) async {
+          final messages = (jsonDecode(req.body) as Map)['messages'] as List;
+          sent = (messages.first as Map)['content'] as String;
+          return http.Response(
+            jsonEncode({
+              'message': {'content': 'annual leave policy'},
+              'done': true,
+            }),
+            200,
+          );
+        }),
+      );
+      await make(client).condense(model: 'test', question: long);
+      return sent!;
+    }
+
+    test('the default carries no example data from one business', () async {
+      final prompt = await systemPromptSent(QueryCondenser.new);
+      expect(prompt, QueryCondenser.defaultSystemPrompt);
+      for (final word in ['naira', 'Abuja', 'Heritage', 'shoes']) {
+        expect(prompt, isNot(contains(word)), reason: word);
+      }
+    });
+
+    test('a custom prompt replaces the default', () async {
+      final prompt = await systemPromptSent(
+        (c) => QueryCondenser(c, systemPrompt: 'Return a search query.'),
+      );
+      expect(prompt, 'Return a search query.');
+    });
+  });
 }

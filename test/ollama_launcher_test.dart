@@ -313,11 +313,244 @@ void main() {
   });
 
   test('default search paths cover installer and Homebrew locations', () {
-    final paths = OllamaLauncher.defaultSearchPaths();
+    final paths = OllamaLauncher.defaultSearchPaths(windows: false);
     expect(paths, contains('/usr/local/bin/ollama'));
     expect(paths, contains('/opt/homebrew/bin/ollama'));
     // A GUI app gets a minimal PATH, so these must be explicit, not searched.
     expect(paths.every((p) => p.startsWith('/')), isTrue);
+  });
+
+  group('Windows', () {
+    test('default search paths are the installer and Program Files', () {
+      final paths = OllamaLauncher.defaultSearchPaths(
+        windows: true,
+        environment: const {
+          'LOCALAPPDATA': r'C:\Users\ada\AppData\Local',
+          'ProgramFiles': r'C:\Program Files',
+        },
+      );
+      expect(paths, <String>[
+        r'C:\Users\ada\AppData\Local\Programs\Ollama\ollama.exe',
+        r'C:\Program Files\Ollama\ollama.exe',
+      ]);
+    });
+
+    test('unset folders are left out of the search paths', () {
+      final paths = OllamaLauncher.defaultSearchPaths(
+        windows: true,
+        environment: const {},
+      );
+      expect(paths, isEmpty);
+    });
+
+    OllamaLauncher onPath(
+      Future<ProcessResult> Function(String exe, List<String> args) run, {
+      required void Function(String executable) onSpawn,
+      bool isWindows = true,
+    }) => OllamaLauncher(
+      clientThatIsUp(() => false),
+      searchPaths: <String>[r'C:\nowhere\ollama.exe'],
+      spawn: (executable) async {
+        onSpawn(executable);
+        return 4242;
+      },
+      run: run,
+      isWindows: isWindows,
+      startupTimeout: const Duration(milliseconds: 100),
+      pollInterval: const Duration(milliseconds: 20),
+    );
+
+    test('falls back to the ollama.exe that where finds on PATH', () async {
+      String? spawned;
+      final ran = <List<String>>[];
+      final l = onPath((exe, args) async {
+        ran.add(<String>[exe, ...args]);
+        return ProcessResult(
+          0,
+          0,
+          'C:\\tools\\ollama.exe\r\nC:\\other\\ollama.exe\r\n',
+          '',
+        );
+      }, onSpawn: (exe) => spawned = exe);
+
+      expect(await l.ensureRunning(), LaunchOutcome.timedOut);
+      expect(ran, [
+        <String>['where', 'ollama'],
+      ]);
+      expect(spawned, r'C:\tools\ollama.exe');
+      expect(l.resolvedPath, r'C:\tools\ollama.exe');
+    });
+
+    test('where finding nothing is reported as not installed', () async {
+      var spawned = false;
+      final l = onPath(
+        (_, _) async => ProcessResult(0, 1, '', 'INFO: Could not find files'),
+        onSpawn: (_) => spawned = true,
+      );
+
+      expect(await l.ensureRunning(), LaunchOutcome.notInstalled);
+      expect(spawned, isFalse);
+    });
+
+    test('PATH is not searched on macOS and Linux', () async {
+      final ran = <List<String>>[];
+      final l = onPath(
+        (exe, args) async {
+          ran.add(<String>[exe, ...args]);
+          return ProcessResult(0, 0, '/usr/bin/ollama', '');
+        },
+        onSpawn: (_) {},
+        isWindows: false,
+      );
+
+      expect(await l.ensureRunning(), LaunchOutcome.notInstalled);
+      expect(ran, isEmpty);
+    });
+  });
+
+  group('Windows stop', () {
+    /// tasklist's CSV row for each pid, as `/FO CSV /NH` prints it.
+    String rows(String image, List<int> pids) => pids.isEmpty
+        ? 'INFO: No tasks are running which match the specified criteria.\r\n'
+        : [
+            for (final p in pids) '"$image","$p","Console","1","45,000 K"\r\n',
+          ].join();
+
+    ({OllamaLauncher launcher, List<List<String>> commands}) stoppable({
+      required bool diesOnTerm,
+      List<int> serverPids = const <int>[9001],
+      List<int> trayPids = const <int>[],
+    }) {
+      final commands = <List<String>>[];
+      var serving = true;
+
+      final l = OllamaLauncher(
+        clientThatIsUp(() => serving),
+        searchPaths: <String>[Platform.resolvedExecutable],
+        spawn: (_) async => 4242,
+        isWindows: true,
+        run: (exe, args) async {
+          commands.add(<String>[exe, ...args]);
+          if (exe == 'tasklist') {
+            final tray = args[1] == 'IMAGENAME eq ollama app.exe';
+            return ProcessResult(
+              0,
+              0,
+              tray
+                  ? rows('ollama app.exe', trayPids)
+                  : rows('ollama.exe', serverPids),
+              '',
+            );
+          }
+          if (exe == 'taskkill' && (diesOnTerm || args.first == '/F')) {
+            serving = false;
+          }
+          return ProcessResult(0, 0, '', '');
+        },
+        shutdownTimeout: const Duration(milliseconds: 400),
+        pollInterval: const Duration(milliseconds: 25),
+        restartGrace: const Duration(milliseconds: 200),
+      );
+      return (launcher: l, commands: commands);
+    }
+
+    List<List<String>> taskkills(List<List<String>> commands) =>
+        commands.where((c) => c[0] == 'taskkill').toList();
+
+    test('finds pids with tasklist and stops them with taskkill', () async {
+      final s = stoppable(diesOnTerm: true, serverPids: <int>[9001, 9002]);
+
+      expect(await s.launcher.stop(), StopOutcome.stopped);
+      expect(
+        s.commands.where((c) => c[0] == 'tasklist').map((c) => c.sublist(1)),
+        [
+          <String>['/FI', 'IMAGENAME eq ollama app.exe', '/FO', 'CSV', '/NH'],
+          <String>['/FI', 'IMAGENAME eq ollama.exe', '/FO', 'CSV', '/NH'],
+        ],
+      );
+      expect(taskkills(s.commands), [
+        <String>['taskkill', '/PID', '9001'],
+        <String>['taskkill', '/PID', '9002'],
+      ]);
+      // No Unix tools on Windows.
+      expect(s.commands.any((c) => c[0].startsWith('/')), isFalse);
+    });
+
+    test('escalates to taskkill /F when the server ignores taskkill', () async {
+      final s = stoppable(diesOnTerm: false);
+
+      expect(await s.launcher.stop(), StopOutcome.stopped);
+      expect(taskkills(s.commands), [
+        <String>['taskkill', '/PID', '9001'],
+        <String>['taskkill', '/F', '/PID', '9001'],
+      ]);
+    });
+
+    test('forces at once when nothing accepts the polite taskkill', () async {
+      // A console `ollama serve` has no window to close, so plain taskkill
+      // fails; waiting out shutdownTimeout before /F would gain nothing.
+      var serving = true;
+      final commands = <List<String>>[];
+      final l = OllamaLauncher(
+        clientThatIsUp(() => serving),
+        searchPaths: <String>[Platform.resolvedExecutable],
+        spawn: (_) async => 4242,
+        isWindows: true,
+        run: (exe, args) async {
+          commands.add(<String>[exe, ...args]);
+          if (exe == 'tasklist') {
+            return ProcessResult(0, 0, rows('ollama.exe', [9001]), '');
+          }
+          if (args.first != '/F') {
+            return ProcessResult(0, 1, '', 'can only be terminated forcefully');
+          }
+          serving = false;
+          return ProcessResult(0, 0, '', '');
+        },
+        shutdownTimeout: const Duration(seconds: 5),
+        pollInterval: const Duration(milliseconds: 25),
+        restartGrace: const Duration(milliseconds: 100),
+      );
+
+      final sw = Stopwatch()..start();
+      expect(await l.stop(), StopOutcome.stopped);
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+      expect(taskkills(commands).last, <String>[
+        'taskkill',
+        '/F',
+        '/PID',
+        '9001',
+      ]);
+    });
+
+    test('signals the tray app before its server', () async {
+      // The tray app restarts a dead server, so it has to go first.
+      final s = stoppable(diesOnTerm: true, trayPids: <int>[500]);
+
+      expect(await s.launcher.stop(), StopOutcome.stopped);
+      expect(taskkills(s.commands), [
+        <String>['taskkill', '/PID', '500'],
+        <String>['taskkill', '/PID', '9001'],
+      ]);
+    });
+
+    test('no matching tasks and no spawned pid is reported as notFound', () {
+      final s = stoppable(diesOnTerm: true, serverPids: const <int>[]);
+      expect(s.launcher.stop(), completion(StopOutcome.notFound));
+    });
+
+    test('messages name the Windows commands', () {
+      final l = stoppable(diesOnTerm: true).launcher;
+      expect(l.explainStop(StopOutcome.failed), contains('taskkill /F'));
+      expect(
+        l.explainStop(StopOutcome.restarted),
+        contains('notification area'),
+      );
+      expect(
+        l.explainLaunch(LaunchOutcome.notInstalled),
+        isNot(contains('brew')),
+      );
+    });
   });
 
   group('base URL', () {

@@ -1,8 +1,8 @@
 name: rag_blocks
 description: >-
-  The building blocks of a local RAG pipeline in pure Dart: a recursive text
-  splitter, CSV-to-prose, exact table arithmetic, a query condenser, an Ollama
-  client and vector-store helpers. No Flutter, no Python, no server.
+  Building blocks for local RAG pipelines in pure Dart: text splitting,
+  CSV-to-prose, exact table maths, query rewriting, similarity ranking and an
+  Ollama client.
 version: 0.1.0
 repository: https://github.com/Xclusivecyborg/rag_blocks
 issue_tracker: https://github.com/Xclusivecyborg/rag_blocks/issues
