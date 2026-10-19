@@ -30,7 +30,7 @@ class CsvTable {
 
   num? number(int row, CsvColumn col) => num.tryParse(cell(row, col));
 
-  DateTime? date(int row, CsvColumn col) => DateTime.tryParse(cell(row, col));
+  DateTime? date(int row, CsvColumn col) => _parseDate(cell(row, col));
 
   /// Distinct non-empty values of a column, in their original casing.
   Set<String> distinctValues(CsvColumn col) => {
@@ -64,15 +64,15 @@ class CsvTable {
         if (value.isEmpty) continue;
         sawValue = true;
         if (num.tryParse(value) == null) allNumbers = false;
-        if (DateTime.tryParse(value) == null) allDates = false;
+        if (_parseDate(value) == null) allDates = false;
         if (!allNumbers && !allDates) break;
       }
       final kind = !sawValue
           ? ColumnKind.text
-          : allDates
-          ? ColumnKind.date
           : allNumbers
           ? ColumnKind.number
+          : allDates
+          ? ColumnKind.date
           : ColumnKind.text;
       columns.add(CsvColumn(header[c].trim(), c, kind));
     }
@@ -182,6 +182,14 @@ class CsvTable {
     }
   }
 }
+
+/// A date in a cell, or null. Only `YYYY-MM-DD` (optionally followed by a
+/// time) counts: [DateTime.tryParse] alone also accepts `71882000` as the
+/// year 7188, which would turn a column of large amounts into dates.
+DateTime? _parseDate(String value) =>
+    _isoDate.hasMatch(value) ? DateTime.tryParse(value) : null;
+
+final RegExp _isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}');
 
 enum ColumnKind { text, number, date }
 

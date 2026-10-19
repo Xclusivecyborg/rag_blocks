@@ -40,6 +40,19 @@ void main() {
       expect(t.column('b')!.kind, ColumnKind.text);
     });
 
+    test('large whole numbers are numbers, not dates', () {
+      // DateTime.tryParse reads 8 digits like 71882000 as a year and month.
+      final t = CsvTable.parse(
+        'location,revenue\nIkeja,71882000\nLekki,12000000\n',
+        source: 'x.csv',
+      );
+      expect(t.column('revenue')!.kind, ColumnKind.number);
+      final total = t.aggregate(
+        const TableQuery(aggregate: Aggregate.sum, metric: 'revenue'),
+      )!;
+      expect(total.value, 83882000);
+    });
+
     test('handles quoted fields with commas', () {
       final t = CsvTable.parse('name,note\n"Doe, Jane",hi\n', source: 'x.csv');
       expect(t.rows.single.first, 'Doe, Jane');
