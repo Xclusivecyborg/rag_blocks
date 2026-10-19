@@ -1,136 +1,247 @@
 # rag_blocks
 
-The building blocks of a local RAG pipeline, in pure Dart. You get a text
-splitter, CSV-to-prose, exact table arithmetic, a query condenser and an
-Ollama client. Each one does a single job, the way LangChain's splitters and
-retrievers do, and you choose which ones to snap together.
+Let an AI answer questions about **your own documents**, in pure Dart,
+entirely on your own computer. No cloud account, no API key, and your files
+never leave the machine. The AI runs through [Ollama](https://ollama.com), a
+free app for running AI models locally.
 
-The only dependency is `package:http`. There's no Flutter, no Python and no
-server beyond Ollama itself, so it runs in a command-line tool, a Flutter app
-or a backend.
+## How it works
 
-## Install
+A chat AI has never seen your documents, so if you ask it about your returns
+policy it will guess. The fix, known as **RAG**, works like an open-book exam:
 
-```bash
-dart pub add rag_blocks
-```
+1. **Look it up:** find the few passages in your files that relate to the
+   question.
+2. **Hand them over:** include those passages in the message to the AI.
+3. **Answer from them:** tell the AI to answer using only those passages.
 
-You also need [Ollama](https://ollama.com) with an embedding model and a chat
-model:
+This package gives you each step as a separate building block, like
+[LangChain](https://www.langchain.com) does in Python. Use only the ones you
+need.
 
-```bash
-ollama pull all-minilm
-ollama pull llama3.2
-```
+## Setup
 
-## A whole pipeline
+1. Install Ollama from [ollama.com](https://ollama.com) (or `brew install
+   ollama` on a Mac).
+2. Download two AI models: a small one that powers the search, and one that
+   writes the answers.
+
+   ```bash
+   ollama pull all-minilm
+   ollama pull llama3.2
+   ```
+
+3. Add the package to your Dart or Flutter project:
+
+   ```bash
+   dart pub add rag_blocks
+   ```
+
+## Quick start
+
+Let's give the AI a short shop handbook and ask it a question it could only
+answer by reading it. The program does four things.
+
+**Step 1: Connect to Ollama.**
 
 ```dart
-import 'package:rag_blocks/rag_blocks.dart';
+final ollama = await OllamaClient.connect(onStatus: print);
+```
 
-final ollama = await OllamaClient.connect(); // starts `ollama serve` if needed
+This finds Ollama on your computer and starts it if it isn't running.
+`onStatus: print` prints what it's doing, such as "Starting ollama serve…".
 
-final splitter = RecursiveCharacterTextSplitter(chunkSize: 600, chunkOverlap: 200);
-final chunks = splitter.splitText(handbookText, source: 'handbook.md');
+**Step 2: Cut the handbook into small pieces.**
 
-final vectors = await ollama.embed(
+```dart
+final splitter = RecursiveCharacterTextSplitter(chunkSize: 200, chunkOverlap: 40);
+final pieces = splitter.splitText(handbook, source: 'handbook.md');
+```
+
+Searching works best on small pieces, because each piece is about one thing.
+`chunkSize: 200` means no piece is longer than 200 characters.
+`chunkOverlap: 40` repeats the last bit of each piece at the start of the
+next, so a sentence that falls on the cut isn't lost.
+
+**Step 3: Find the pieces that best match the question.**
+
+```dart
+// Describe every piece as a list of numbers.
+final pieceNumbers = await ollama.embed(
   model: 'all-minilm',
-  input: [for (final c in chunks) c.text],
+  input: [for (final p in pieces) p.text],
 );
-// ...store the vectors, then embed the question and find the closest chunks...
 
+// Describe the question the same way.
+const question = 'How long do I have to return Heritage shoes?';
+final questionNumbers = await ollama.embedOne(model: 'all-minilm', input: question);
+
+// Keep the two pieces whose numbers are closest to the question's.
+final ranked = [
+  for (var i = 0; i < pieces.length; i++)
+    (text: pieces[i].text, score: closeness(questionNumbers, pieceNumbers[i])),
+]..sort((a, b) => b.score.compareTo(a.score));
+final bestPieces = ranked.take(2).map((r) => r.text).join('\n\n');
+```
+
+This is how the search works. The `all-minilm` model reads a piece of text
+and turns it into a list of numbers that describes its *meaning*. Texts
+about the same topic get similar numbers, even when they use different
+words. So we turn every piece and the question into numbers, and pick the
+pieces whose numbers are closest. `closeness` is a small helper, shown in
+the [full program](example/main.dart), that scores two lists from 0
+(unrelated) to 1 (same meaning).
+
+**Step 4: Ask the chat model, giving it only those pieces.**
+
+```dart
 final reply = await ollama.chat(
   model: 'llama3.2',
   messages: [
-    const ChatMessage('system', 'Answer using only the excerpts.'),
-    ChatMessage('user', 'Excerpts:\n$context\n\nQuestion: $question'),
+    const ChatMessage('system', 'Answer using only the excerpts. If they do not say, reply "I don\'t know."'),
+    ChatMessage('user', 'Excerpts:\n$bestPieces\n\nQuestion: $question'),
   ],
 );
-print(reply.content);
+print(reply.content); // Heritage shoes can be returned within 45 days.
 ```
 
-[`example/main.dart`](example/main.dart) runs this end to end, with a
-plain list standing in for the vector database.
+The `system` message sets the rules, and the `user` message carries the
+pieces and the question. Because the AI is told to stick to the pieces, it
+answers from your handbook instead of guessing, and says "I don't know"
+when the handbook doesn't cover the question.
+
+The whole program is in [`example/main.dart`](example/main.dart). Run it
+with `dart run example/main.dart`.
 
 ## The blocks
 
-### Splitting
+| Block | What it does |
+|---|---|
+| [`findSupportedFiles`](#load-a-folder) | Lists the documents in a folder. |
+| [`RecursiveCharacterTextSplitter`](#cut-text-into-pieces) | Cuts documents into small pieces for searching. |
+| [`csvToProse`](#make-spreadsheets-searchable) | Turns spreadsheet rows into sentences the search understands. |
+| [`CsvTable`, `TableQueryPlanner`](#get-exact-totals-from-spreadsheets) | Works out totals and averages over every row, instead of letting the AI guess. |
+| [`QueryCondenser`](#improve-questions-before-searching) | Shortens long questions and completes follow-ups before searching. |
+| [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, and starts or stops it. |
+| [`VectorStore`, `capPerSource`](#store-and-search-pieces) | Plugs in your own search database. |
 
-`RecursiveCharacterTextSplitter` breaks text at paragraphs first, then at
-sentences, then at words. It never makes a chunk longer than `chunkSize`, and
-each chunk records the character range it came from, so you can show a
-citation.
+### Load a folder
 
-### CSV that embeds well
+Lists every `.txt`, `.md`, `.csv`, `.json` and `.log` file in a folder and
+its subfolders, skipping hidden ones like `.git`.
 
-A raw CSV line like `SHO-114,Lagos,2026-03-02,48` gives an embedding model
-almost nothing to match. `csvToProse` rewrites each row as labelled sentences
-instead, such as `location: Lagos. units_sold: 48.`
+```dart
+final files = await findSupportedFiles(Directory('knowledge_base'));
+```
 
-### Exact arithmetic over tables
+### Cut text into pieces
 
-Retrieval only ever shows the model a handful of rows, so a model asked to
-"total January's revenue" adds up five rows and guesses. `TableQueryPlanner`
-recognises questions about totals, averages, counts, highest and lowest, and
-works them out over every row:
+Cuts between paragraphs first, then between sentences, and never makes a
+piece longer than `chunkSize`. Each piece remembers where it came from, so
+you can show the source of an answer.
+
+```dart
+final pieces = RecursiveCharacterTextSplitter().splitText(text, source: 'policies.md');
+final first = pieces.first;
+print('${first.source}, characters ${first.start}–${first.end}: ${first.text}');
+```
+
+### Make spreadsheets searchable
+
+A row like `SHO-114,Lagos,12` means little on its own. `csvToProse` adds the
+column names, so a question about "staff in Lagos" can find it.
+
+```dart
+print(csvToProse('branch,city,staff\nSHO-114,Lagos,12'));
+// Record 1. branch: SHO-114. city: Lagos. staff: 12.
+```
+
+### Get exact totals from spreadsheets
+
+The search only shows the AI a few rows, so if you ask for a total it adds
+up those few and gets it wrong. `TableQueryPlanner` spots questions about
+totals, averages, counts, highest and lowest, and works them out over every
+row:
 
 ```dart
 final sales = CsvTable.parse(csvText, source: 'sales.csv');
-final result = TableQueryPlanner.answer([sales], 'What was total revenue in January?');
-if (result != null) {
-  print(result.toPromptBlock()); // the figure, and how many rows it covers
-}
+final result = TableQueryPlanner.answer([sales], 'What was total revenue in January 2026?');
+print(result?.toPromptBlock());
+// Total revenue_ngn in January 2026: 71,882,000
+// Computed over 80 matching row(s) out of 240 in sales.csv.
 ```
 
-It returns null for anything that isn't clearly a calculation, so the caller
-can fall back to retrieval. A question like "how much annual leave do staff
-get?" never comes back as the sum of a sales column.
+Include that text in your message to the AI, and it will quote the exact
+figure. When the question isn't clearly a calculation, `answer` returns
+`null` and you use the normal search instead.
 
-### Rewriting questions before searching
+### Improve questions before searching
 
-An embedding represents the whole sentence, so a long question with extra
-clauses drifts away from the document it needs. `QueryCondenser` asks the chat
-model to boil the question down to a short search query. It also turns a
-follow-up like "and the Abuja one?" into a complete query using the
-conversation so far. If anything goes wrong, you get the original question
-back.
+Long questions full of extra detail search badly, and follow-ups like "and
+the Abuja one?" mean nothing on their own. `QueryCondenser` asks the chat
+model to rewrite the question into a few search words. If anything goes
+wrong, you get the original question back.
 
 ```dart
 final condensed = await QueryCondenser(ollama).condense(
   model: 'llama3.2',
-  question: question,
-  history: previousQuestions,
+  question: 'and the Abuja one?',
+  history: ['Where is the Lagos branch?'],
 );
-final queryVector = await ollama.embedOne(model: 'all-minilm', input: condensed.text);
+print(condensed.text); // Abuja branch location
 ```
 
-### Ollama
+### Talk to Ollama
 
-`OllamaClient` covers what a RAG pipeline needs: `embed`, `embedOne`, `chat`
-for the whole reply, `chatStream` for a reply as it is written, `listModels`
-and `version`. `OllamaClient.connect()` starts `ollama serve` for you when
-nothing is answering and the base URL is on this machine, and throws an `OllamaException` that says why if Ollama
-isn't installed or won't start. `OllamaLauncher` exposes the start and stop
-steps on their own.
+`OllamaClient` does the talking: `embed` and `embedOne` turn text into
+numbers for searching, `chat` gets a whole reply, `chatStream` gets a reply
+word by word as it's written, and `listModels` shows what's installed.
 
-Starting and stopping Ollama works on macOS and Linux. On Windows, start
-Ollama yourself; the client works the same. A sandboxed macOS app can't
-start processes, so turn off `com.apple.security.app-sandbox` if you want the
-app to launch Ollama.
+```dart
+await for (final piece in ollama.chatStream(model: 'llama3.2', messages: messages)) {
+  stdout.write(piece.content ?? '');
+}
+```
 
-### Vector stores
+`OllamaLauncher` starts and stops Ollama, for when you want your own
+"Start" and "Stop" buttons. `OllamaClient.connect()` already uses it.
 
-The package doesn't include a database. `VectorStore` is the interface your
-store implements, whether it's ObjectBox, sqlite-vec or a list in memory.
-`capPerSource` stops one large file from filling every result slot.
+### Store and search pieces
 
-### Loading a folder
+Comparing the question with every piece, as the quick start does, is fine
+for a few hundred pieces. For more, use a search database such as ObjectBox
+or sqlite-vec. `VectorStore` describes what it needs to do, so the rest of
+your code doesn't depend on which one you pick. To get started,
+[`example/memory_vector_store.dart`](example/memory_vector_store.dart) is a
+complete one that keeps everything in memory.
 
-`findSupportedFiles` lists every `.txt`, `.md`, `.csv`, `.json` and `.log`
-file in a folder, skipping hidden files.
+`capPerSource` stops one large file from filling every search result.
+
+## Learn more
+
+The [guide](doc/guide.md) covers every option, how to combine the blocks
+into one `answer()` function, how to choose sizes and models, and what to
+do when answers go wrong.
+
+## Where it runs
+
+Command-line tools, servers and Flutter apps on macOS, Linux and Windows.
+On Windows, start Ollama yourself for now; everything else works the same.
+Web apps aren't supported yet.
 
 ## Running the tests
 
 ```bash
 dart test
 ```
+
+The tests don't need Ollama installed.
+
+## Contributing
+
+Bug reports and pull requests are welcome on
+[GitHub](https://github.com/Xclusivecyborg/rag_blocks/issues).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
