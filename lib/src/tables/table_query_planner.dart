@@ -109,6 +109,9 @@ abstract final class TableQueryPlanner {
     if (aggregate != Aggregate.count && metric == null) return null;
 
     final filters = _findFilters(table, question);
+    // "How many records for Lekki?" asks about a place this table does not
+    // have. Ignoring the name would count every row, so decline instead.
+    if (_namesSomethingMissing(table, question, synonyms)) return null;
     return TableQuery(
       aggregate: aggregate,
       metric: metric?.name,
@@ -174,6 +177,45 @@ abstract final class TableQueryPlanner {
     }
     return filters;
   }
+
+  /// A capitalised name after "for", "in", "at" or "from", as in "revenue
+  /// for Lekki" or "sales at Port Harcourt". This is where questions name
+  /// the rows they want, so a name found there must match something in the
+  /// table. Names elsewhere ("Acme's revenue") are not checked, and neither
+  /// are lower-case ones, which cannot be told apart from ordinary words.
+  static final RegExp _namedAfterPreposition = RegExp(
+    r'\b(?:[Ff]or|[Ii]n|[Aa]t|[Ff]rom)\s+(?:the\s+)?([A-Z][A-Za-z0-9-]*)',
+  );
+
+  /// True if [question] names something, the way [_namedAfterPreposition]
+  /// describes, that is not a value, column, month or quarter in [table].
+  static bool _namesSomethingMissing(
+    CsvTable table,
+    String question,
+    Map<String, List<String>> synonyms,
+  ) {
+    final names = [
+      for (final m in _namedAfterPreposition.allMatches(question)) m.group(1)!,
+    ];
+    if (names.isEmpty) return false;
+    final known = <String>{
+      ..._months,
+      'q1',
+      'q2',
+      'q3',
+      'q4',
+      for (final col in table.columns) ...col.nameWords,
+      for (final col in table.textColumns)
+        for (final value in table.distinctValues(col)) ..._words(value),
+      for (final MapEntry(:key, :value) in synonyms.entries) ...[key, ...value],
+    };
+    return names.any((name) => !_words(name).every(known.contains));
+  }
+
+  static Iterable<String> _words(String text) => text
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((w) => w.isNotEmpty);
 
   /// "january 2026", "q1 2026" or "2026". A year is required, so a bare month
   /// never silently covers every year in the data.

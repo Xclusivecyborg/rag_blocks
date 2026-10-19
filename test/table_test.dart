@@ -271,6 +271,41 @@ void main() {
       expect(result!.value, 15);
     });
 
+    test('a name the table does not have is declined, not ignored', () {
+      // There is no Lekki location, so counting every row would be wrong.
+      for (final q in [
+        'How many records are there for Lekki?',
+        'Total revenue for Lekki in January 2026',
+        'Average units sold at the Lekki branch in Q1 2026',
+      ]) {
+        expect(TableQueryPlanner.planFor(sales, q), isNull, reason: q);
+      }
+    });
+
+    test('names the table does have still work', () {
+      final online = TableQueryPlanner.answer([
+        sales,
+      ], 'How many records for Online?')!;
+      expect(online.value, 48);
+
+      final portHarcourt = TableQueryPlanner.planFor(
+        sales,
+        "What was total revenue at Port Harcourt's stores in Q1 2026?",
+      )!;
+      expect(portHarcourt.filters.single.value, 'Port Harcourt');
+    });
+
+    test('a name unknown to one table can be answered by another', () {
+      final lagos = CsvTable.parse('city,sales\nIkeja,10\n', source: 'a.csv');
+      final abuja = CsvTable.parse('city,sales\nWuse,7\n', source: 'b.csv');
+      final result = TableQueryPlanner.answer([
+        lagos,
+        abuja,
+      ], 'Total sales for Wuse');
+      expect(result!.source, 'b.csv');
+      expect(result.value, 7);
+    });
+
     test('an empty table is declined', () {
       final t = CsvTable.parse('a,b\n', source: 'empty.csv');
       expect(TableQueryPlanner.planFor(t, 'total a'), isNull);
