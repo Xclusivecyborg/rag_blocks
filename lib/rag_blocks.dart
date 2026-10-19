@@ -24,4 +24,5 @@ export 'src/retrievers/cap_per_source.dart';
 export 'src/tables/csv_table.dart';
 export 'src/tables/table_query_planner.dart';
 export 'src/text_splitters/recursive_character_text_splitter.dart';
+export 'src/vector_stores/in_memory_vector_store.dart';
 export 'src/vector_stores/vector_store.dart';
