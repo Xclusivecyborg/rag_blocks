@@ -408,6 +408,114 @@ void main() {
     });
   });
 
+  group('Windows stop', () {
+    /// tasklist's CSV row for each pid, as `/FO CSV /NH` prints it.
+    String rows(String image, List<int> pids) => pids.isEmpty
+        ? 'INFO: No tasks are running which match the specified criteria.\r\n'
+        : [
+            for (final p in pids) '"$image","$p","Console","1","45,000 K"\r\n',
+          ].join();
+
+    ({OllamaLauncher launcher, List<List<String>> commands}) stoppable({
+      required bool diesOnTerm,
+      List<int> serverPids = const <int>[9001],
+      List<int> trayPids = const <int>[],
+    }) {
+      final commands = <List<String>>[];
+      var serving = true;
+
+      final l = OllamaLauncher(
+        clientThatIsUp(() => serving),
+        searchPaths: <String>[Platform.resolvedExecutable],
+        spawn: (_) async => 4242,
+        isWindows: true,
+        run: (exe, args) async {
+          commands.add(<String>[exe, ...args]);
+          if (exe == 'tasklist') {
+            final tray = args[1] == 'IMAGENAME eq ollama app.exe';
+            return ProcessResult(
+              0,
+              0,
+              tray
+                  ? rows('ollama app.exe', trayPids)
+                  : rows('ollama.exe', serverPids),
+              '',
+            );
+          }
+          if (exe == 'taskkill' && (diesOnTerm || args.first == '/F')) {
+            serving = false;
+          }
+          return ProcessResult(0, 0, '', '');
+        },
+        shutdownTimeout: const Duration(milliseconds: 400),
+        pollInterval: const Duration(milliseconds: 25),
+        restartGrace: const Duration(milliseconds: 200),
+      );
+      return (launcher: l, commands: commands);
+    }
+
+    List<List<String>> taskkills(List<List<String>> commands) =>
+        commands.where((c) => c[0] == 'taskkill').toList();
+
+    test('finds pids with tasklist and stops them with taskkill', () async {
+      final s = stoppable(diesOnTerm: true, serverPids: <int>[9001, 9002]);
+
+      expect(await s.launcher.stop(), StopOutcome.stopped);
+      expect(
+        s.commands.where((c) => c[0] == 'tasklist').map((c) => c.sublist(1)),
+        [
+          <String>['/FI', 'IMAGENAME eq ollama app.exe', '/FO', 'CSV', '/NH'],
+          <String>['/FI', 'IMAGENAME eq ollama.exe', '/FO', 'CSV', '/NH'],
+        ],
+      );
+      expect(taskkills(s.commands), [
+        <String>['taskkill', '/PID', '9001'],
+        <String>['taskkill', '/PID', '9002'],
+      ]);
+      // No Unix tools on Windows.
+      expect(s.commands.any((c) => c[0].startsWith('/')), isFalse);
+    });
+
+    test('escalates to taskkill /F when the server ignores taskkill', () async {
+      final s = stoppable(diesOnTerm: false);
+
+      expect(await s.launcher.stop(), StopOutcome.stopped);
+      expect(taskkills(s.commands), [
+        <String>['taskkill', '/PID', '9001'],
+        <String>['taskkill', '/F', '/PID', '9001'],
+      ]);
+    });
+
+    test('signals the tray app before its server', () async {
+      // The tray app restarts a dead server, so it has to go first.
+      final s = stoppable(diesOnTerm: true, trayPids: <int>[500]);
+
+      expect(await s.launcher.stop(), StopOutcome.stopped);
+      expect(taskkills(s.commands), [
+        <String>['taskkill', '/PID', '500'],
+        <String>['taskkill', '/PID', '9001'],
+      ]);
+    });
+
+    test('no matching tasks and no spawned pid is reported as notFound', () {
+      final s = stoppable(diesOnTerm: true, serverPids: const <int>[]);
+      expect(s.launcher.stop(), completion(StopOutcome.notFound));
+    });
+
+    test('messages name the Windows commands', () {
+      final l = stoppable(diesOnTerm: true).launcher;
+      expect(l.explainStop(StopOutcome.failed), contains('taskkill /F'));
+      expect(
+        l.explainStop(StopOutcome.restarted),
+        contains('notification area'),
+      );
+      expect(
+        l.explainLaunch(LaunchOutcome.notInstalled),
+        isNot(contains('brew')),
+      );
+    });
+  });
+
   group('base URL', () {
     OllamaLauncher launcherAt(String url, {required void Function() onSpawn}) =>
         OllamaLauncher(
