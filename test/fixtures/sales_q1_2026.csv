@@ -1,0 +1,241 @@
+week_starting,location,product_line,units_sold,unit_price_ngn,revenue_ngn,units_returned
+2026-01-05,Victoria Island,Everyday,41,26500,1086500,0
+2026-01-05,Victoria Island,Formal,26,76000,1976000,0
+2026-01-05,Victoria Island,Athletic,40,39500,1580000,0
+2026-01-05,Victoria Island,Heritage,2,192000,384000,0
+2026-01-05,Ikeja City Mall,Everyday,41,23500,963500,0
+2026-01-05,Ikeja City Mall,Formal,13,77000,1001000,0
+2026-01-05,Ikeja City Mall,Athletic,22,79500,1749000,0
+2026-01-05,Ikeja City Mall,Heritage,3,202000,606000,2
+2026-01-05,Wuse 2 Abuja,Everyday,31,22000,682000,0
+2026-01-05,Wuse 2 Abuja,Formal,14,78000,1092000,0
+2026-01-05,Wuse 2 Abuja,Athletic,8,56500,452000,0
+2026-01-05,Wuse 2 Abuja,Heritage,3,225500,676500,0
+2026-01-05,Port Harcourt,Everyday,26,34000,884000,3
+2026-01-05,Port Harcourt,Formal,3,54500,163500,1
+2026-01-05,Port Harcourt,Athletic,11,50000,550000,1
+2026-01-05,Port Harcourt,Heritage,1,184500,184500,0
+2026-01-05,Online,Everyday,29,18500,536500,0
+2026-01-05,Online,Formal,10,52000,520000,0
+2026-01-05,Online,Athletic,17,65500,1113500,0
+2026-01-05,Online,Heritage,4,226500,906000,1
+2026-01-12,Victoria Island,Everyday,46,34000,1564000,1
+2026-01-12,Victoria Island,Formal,22,92000,2024000,2
+2026-01-12,Victoria Island,Athletic,32,75000,2400000,0
+2026-01-12,Victoria Island,Heritage,4,98000,392000,0
+2026-01-12,Ikeja City Mall,Everyday,36,22500,810000,1
+2026-01-12,Ikeja City Mall,Formal,9,91000,819000,0
+2026-01-12,Ikeja City Mall,Athletic,29,37500,1087500,0
+2026-01-12,Ikeja City Mall,Heritage,1,142500,142500,0
+2026-01-12,Wuse 2 Abuja,Everyday,47,23500,1104500,0
+2026-01-12,Wuse 2 Abuja,Formal,14,119500,1673000,0
+2026-01-12,Wuse 2 Abuja,Athletic,12,37500,450000,0
+2026-01-12,Wuse 2 Abuja,Heritage,3,186000,558000,0
+2026-01-12,Port Harcourt,Everyday,26,34500,897000,0
+2026-01-12,Port Harcourt,Formal,6,58000,348000,0
+2026-01-12,Port Harcourt,Athletic,3,84000,252000,0
+2026-01-12,Port Harcourt,Heritage,1,217000,217000,2
+2026-01-12,Online,Everyday,39,18000,702000,0
+2026-01-12,Online,Formal,6,115500,693000,2
+2026-01-12,Online,Athletic,23,80000,1840000,0
+2026-01-12,Online,Heritage,2,207000,414000,0
+2026-01-19,Victoria Island,Everyday,89,24000,2136000,0
+2026-01-19,Victoria Island,Formal,15,47000,705000,0
+2026-01-19,Victoria Island,Athletic,34,34500,1173000,0
+2026-01-19,Victoria Island,Heritage,2,199500,399000,1
+2026-01-19,Ikeja City Mall,Everyday,63,33000,2079000,0
+2026-01-19,Ikeja City Mall,Formal,12,55000,660000,0
+2026-01-19,Ikeja City Mall,Athletic,13,52500,682500,0
+2026-01-19,Ikeja City Mall,Heritage,3,199500,598500,0
+2026-01-19,Wuse 2 Abuja,Everyday,24,27000,648000,0
+2026-01-19,Wuse 2 Abuja,Formal,10,93500,935000,0
+2026-01-19,Wuse 2 Abuja,Athletic,21,73000,1533000,0
+2026-01-19,Wuse 2 Abuja,Heritage,2,155500,311000,2
+2026-01-19,Port Harcourt,Everyday,15,31500,472500,2
+2026-01-19,Port Harcourt,Formal,6,72500,435000,0
+2026-01-19,Port Harcourt,Athletic,9,82500,742500,0
+2026-01-19,Port Harcourt,Heritage,2,224500,449000,0
+2026-01-19,Online,Everyday,55,34000,1870000,0
+2026-01-19,Online,Formal,9,111000,999000,0
+2026-01-19,Online,Athletic,7,74500,521500,2
+2026-01-19,Online,Heritage,1,215500,215500,1
+2026-01-26,Victoria Island,Everyday,79,31500,2488500,0
+2026-01-26,Victoria Island,Formal,22,76000,1672000,0
+2026-01-26,Victoria Island,Athletic,33,77000,2541000,0
+2026-01-26,Victoria Island,Heritage,2,211000,422000,1
+2026-01-26,Ikeja City Mall,Everyday,36,31500,1134000,0
+2026-01-26,Ikeja City Mall,Formal,8,84000,672000,2
+2026-01-26,Ikeja City Mall,Athletic,18,43000,774000,0
+2026-01-26,Ikeja City Mall,Heritage,4,198500,794000,1
+2026-01-26,Wuse 2 Abuja,Everyday,44,22500,990000,0
+2026-01-26,Wuse 2 Abuja,Formal,8,48500,388000,0
+2026-01-26,Wuse 2 Abuja,Athletic,18,63000,1134000,0
+2026-01-26,Wuse 2 Abuja,Heritage,2,96000,192000,2
+2026-01-26,Port Harcourt,Everyday,23,33500,770500,0
+2026-01-26,Port Harcourt,Formal,4,64500,258000,2
+2026-01-26,Port Harcourt,Athletic,10,65500,655000,0
+2026-01-26,Port Harcourt,Heritage,2,154000,308000,0
+2026-01-26,Online,Everyday,55,20500,1127500,0
+2026-01-26,Online,Formal,15,85000,1275000,0
+2026-01-26,Online,Athletic,16,63500,1016000,0
+2026-01-26,Online,Heritage,1,211500,211500,0
+2026-02-02,Victoria Island,Everyday,60,34000,2040000,0
+2026-02-02,Victoria Island,Formal,25,99500,2487500,1
+2026-02-02,Victoria Island,Athletic,32,52000,1664000,0
+2026-02-02,Victoria Island,Heritage,6,127000,762000,0
+2026-02-02,Ikeja City Mall,Everyday,53,31500,1669500,0
+2026-02-02,Ikeja City Mall,Formal,7,62000,434000,0
+2026-02-02,Ikeja City Mall,Athletic,10,74000,740000,0
+2026-02-02,Ikeja City Mall,Heritage,4,173000,692000,0
+2026-02-02,Wuse 2 Abuja,Everyday,29,23000,667000,3
+2026-02-02,Wuse 2 Abuja,Formal,14,48500,679000,1
+2026-02-02,Wuse 2 Abuja,Athletic,11,78500,863500,0
+2026-02-02,Wuse 2 Abuja,Heritage,1,194500,194500,0
+2026-02-02,Port Harcourt,Everyday,13,25500,331500,0
+2026-02-02,Port Harcourt,Formal,5,58000,290000,0
+2026-02-02,Port Harcourt,Athletic,4,76500,306000,0
+2026-02-02,Port Harcourt,Heritage,1,127500,127500,1
+2026-02-02,Online,Everyday,58,29000,1682000,0
+2026-02-02,Online,Formal,15,55500,832500,2
+2026-02-02,Online,Athletic,18,80500,1449000,0
+2026-02-02,Online,Heritage,1,98000,98000,0
+2026-02-09,Victoria Island,Everyday,73,27500,2007500,0
+2026-02-09,Victoria Island,Formal,8,93000,744000,0
+2026-02-09,Victoria Island,Athletic,31,70500,2185500,0
+2026-02-09,Victoria Island,Heritage,3,230000,690000,1
+2026-02-09,Ikeja City Mall,Everyday,56,20500,1148000,1
+2026-02-09,Ikeja City Mall,Formal,16,57500,920000,1
+2026-02-09,Ikeja City Mall,Athletic,18,40500,729000,0
+2026-02-09,Ikeja City Mall,Heritage,1,186500,186500,0
+2026-02-09,Wuse 2 Abuja,Everyday,33,18000,594000,0
+2026-02-09,Wuse 2 Abuja,Formal,7,59500,416500,0
+2026-02-09,Wuse 2 Abuja,Athletic,6,48500,291000,0
+2026-02-09,Wuse 2 Abuja,Heritage,3,164000,492000,0
+2026-02-09,Port Harcourt,Everyday,19,20500,389500,0
+2026-02-09,Port Harcourt,Formal,7,88500,619500,0
+2026-02-09,Port Harcourt,Athletic,10,30500,305000,0
+2026-02-09,Port Harcourt,Heritage,1,192500,192500,0
+2026-02-09,Online,Everyday,27,23500,634500,0
+2026-02-09,Online,Formal,10,104000,1040000,2
+2026-02-09,Online,Athletic,14,46500,651000,1
+2026-02-09,Online,Heritage,3,144500,433500,0
+2026-02-16,Victoria Island,Everyday,40,20000,800000,0
+2026-02-16,Victoria Island,Formal,9,67000,603000,1
+2026-02-16,Victoria Island,Athletic,24,62000,1488000,2
+2026-02-16,Victoria Island,Heritage,7,134000,938000,3
+2026-02-16,Ikeja City Mall,Everyday,57,33500,1909500,3
+2026-02-16,Ikeja City Mall,Formal,11,110000,1210000,2
+2026-02-16,Ikeja City Mall,Athletic,10,43000,430000,0
+2026-02-16,Ikeja City Mall,Heritage,4,180000,720000,0
+2026-02-16,Wuse 2 Abuja,Everyday,42,18000,756000,0
+2026-02-16,Wuse 2 Abuja,Formal,11,68500,753500,0
+2026-02-16,Wuse 2 Abuja,Athletic,7,73000,511000,0
+2026-02-16,Wuse 2 Abuja,Heritage,2,160000,320000,0
+2026-02-16,Port Harcourt,Everyday,22,21000,462000,1
+2026-02-16,Port Harcourt,Formal,3,106500,319500,0
+2026-02-16,Port Harcourt,Athletic,3,84000,252000,0
+2026-02-16,Port Harcourt,Heritage,1,109000,109000,0
+2026-02-16,Online,Everyday,57,18500,1054500,0
+2026-02-16,Online,Formal,6,71000,426000,0
+2026-02-16,Online,Athletic,17,73500,1249500,2
+2026-02-16,Online,Heritage,1,125000,125000,2
+2026-02-23,Victoria Island,Everyday,53,20500,1086500,0
+2026-02-23,Victoria Island,Formal,22,104500,2299000,1
+2026-02-23,Victoria Island,Athletic,17,70000,1190000,1
+2026-02-23,Victoria Island,Heritage,6,192500,1155000,0
+2026-02-23,Ikeja City Mall,Everyday,39,30000,1170000,0
+2026-02-23,Ikeja City Mall,Formal,11,114000,1254000,0
+2026-02-23,Ikeja City Mall,Athletic,20,72500,1450000,0
+2026-02-23,Ikeja City Mall,Heritage,5,225000,1125000,2
+2026-02-23,Wuse 2 Abuja,Everyday,41,28500,1168500,0
+2026-02-23,Wuse 2 Abuja,Formal,9,106500,958500,0
+2026-02-23,Wuse 2 Abuja,Athletic,9,78500,706500,2
+2026-02-23,Wuse 2 Abuja,Heritage,2,95000,190000,0
+2026-02-23,Port Harcourt,Everyday,12,30500,366000,0
+2026-02-23,Port Harcourt,Formal,6,58000,348000,0
+2026-02-23,Port Harcourt,Athletic,7,48500,339500,0
+2026-02-23,Port Harcourt,Heritage,1,197500,197500,0
+2026-02-23,Online,Everyday,39,31000,1209000,2
+2026-02-23,Online,Formal,10,49000,490000,0
+2026-02-23,Online,Athletic,17,33000,561000,0
+2026-02-23,Online,Heritage,1,176000,176000,0
+2026-03-02,Victoria Island,Everyday,63,24500,1543500,0
+2026-03-02,Victoria Island,Formal,23,79000,1817000,0
+2026-03-02,Victoria Island,Athletic,38,31500,1197000,0
+2026-03-02,Victoria Island,Heritage,3,184000,552000,1
+2026-03-02,Ikeja City Mall,Everyday,40,21000,840000,0
+2026-03-02,Ikeja City Mall,Formal,11,76500,841500,0
+2026-03-02,Ikeja City Mall,Athletic,20,58500,1170000,0
+2026-03-02,Ikeja City Mall,Heritage,1,193500,193500,1
+2026-03-02,Wuse 2 Abuja,Everyday,39,18500,721500,1
+2026-03-02,Wuse 2 Abuja,Formal,9,103000,927000,0
+2026-03-02,Wuse 2 Abuja,Athletic,19,46500,883500,1
+2026-03-02,Wuse 2 Abuja,Heritage,2,113500,227000,2
+2026-03-02,Port Harcourt,Everyday,25,19000,475000,1
+2026-03-02,Port Harcourt,Formal,6,72500,435000,0
+2026-03-02,Port Harcourt,Athletic,6,38500,231000,0
+2026-03-02,Port Harcourt,Heritage,1,145000,145000,0
+2026-03-02,Online,Everyday,40,25000,1000000,3
+2026-03-02,Online,Formal,16,82500,1320000,2
+2026-03-02,Online,Athletic,24,37000,888000,0
+2026-03-02,Online,Heritage,3,147000,441000,0
+2026-03-09,Victoria Island,Everyday,71,31500,2236500,1
+2026-03-09,Victoria Island,Formal,13,66500,864500,0
+2026-03-09,Victoria Island,Athletic,37,81000,2997000,1
+2026-03-09,Victoria Island,Heritage,4,156500,626000,1
+2026-03-09,Ikeja City Mall,Everyday,63,26000,1638000,0
+2026-03-09,Ikeja City Mall,Formal,15,67500,1012500,0
+2026-03-09,Ikeja City Mall,Athletic,12,75000,900000,1
+2026-03-09,Ikeja City Mall,Heritage,4,192000,768000,0
+2026-03-09,Wuse 2 Abuja,Everyday,45,19500,877500,0
+2026-03-09,Wuse 2 Abuja,Formal,12,65000,780000,1
+2026-03-09,Wuse 2 Abuja,Athletic,13,36500,474500,0
+2026-03-09,Wuse 2 Abuja,Heritage,1,231000,231000,0
+2026-03-09,Port Harcourt,Everyday,18,32000,576000,0
+2026-03-09,Port Harcourt,Formal,5,53000,265000,0
+2026-03-09,Port Harcourt,Athletic,7,49000,343000,0
+2026-03-09,Port Harcourt,Heritage,1,216000,216000,1
+2026-03-09,Online,Everyday,55,28000,1540000,2
+2026-03-09,Online,Formal,9,47500,427500,0
+2026-03-09,Online,Athletic,26,52000,1352000,0
+2026-03-09,Online,Heritage,1,100500,100500,0
+2026-03-16,Victoria Island,Everyday,45,24000,1080000,0
+2026-03-16,Victoria Island,Formal,18,107000,1926000,0
+2026-03-16,Victoria Island,Athletic,35,60000,2100000,3
+2026-03-16,Victoria Island,Heritage,6,128000,768000,0
+2026-03-16,Ikeja City Mall,Everyday,46,18000,828000,1
+2026-03-16,Ikeja City Mall,Formal,7,115000,805000,0
+2026-03-16,Ikeja City Mall,Athletic,29,56500,1638500,0
+2026-03-16,Ikeja City Mall,Heritage,5,184000,920000,1
+2026-03-16,Wuse 2 Abuja,Everyday,33,33500,1105500,0
+2026-03-16,Wuse 2 Abuja,Formal,7,113500,794500,1
+2026-03-16,Wuse 2 Abuja,Athletic,12,65500,786000,0
+2026-03-16,Wuse 2 Abuja,Heritage,2,137000,274000,0
+2026-03-16,Port Harcourt,Everyday,24,31500,756000,0
+2026-03-16,Port Harcourt,Formal,4,94500,378000,0
+2026-03-16,Port Harcourt,Athletic,6,70500,423000,2
+2026-03-16,Port Harcourt,Heritage,2,150500,301000,1
+2026-03-16,Online,Everyday,46,29500,1357000,0
+2026-03-16,Online,Formal,15,53500,802500,0
+2026-03-16,Online,Athletic,20,54500,1090000,0
+2026-03-16,Online,Heritage,1,195500,195500,0
+2026-03-23,Victoria Island,Everyday,49,26500,1298500,0
+2026-03-23,Victoria Island,Formal,16,111000,1776000,0
+2026-03-23,Victoria Island,Athletic,26,36000,936000,0
+2026-03-23,Victoria Island,Heritage,6,141000,846000,0
+2026-03-23,Ikeja City Mall,Everyday,48,32000,1536000,0
+2026-03-23,Ikeja City Mall,Formal,18,47500,855000,0
+2026-03-23,Ikeja City Mall,Athletic,12,53500,642000,0
+2026-03-23,Ikeja City Mall,Heritage,3,99500,298500,0
+2026-03-23,Wuse 2 Abuja,Everyday,45,34000,1530000,0
+2026-03-23,Wuse 2 Abuja,Formal,12,60500,726000,0
+2026-03-23,Wuse 2 Abuja,Athletic,13,32500,422500,0
+2026-03-23,Wuse 2 Abuja,Heritage,1,215500,215500,0
+2026-03-23,Port Harcourt,Everyday,14,18000,252000,0
+2026-03-23,Port Harcourt,Formal,3,114500,343500,0
+2026-03-23,Port Harcourt,Athletic,12,82500,990000,1
+2026-03-23,Port Harcourt,Heritage,1,217000,217000,2
+2026-03-23,Online,Everyday,26,29500,767000,0
+2026-03-23,Online,Formal,12,116500,1398000,0
+2026-03-23,Online,Athletic,14,37000,518000,0
+2026-03-23,Online,Heritage,3,111000,333000,3
