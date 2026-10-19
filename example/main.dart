@@ -31,8 +31,7 @@ Future<void> main() async {
   final ranker = SimilarityRanker(ollama, model: 'all-minilm');
   await ranker.addAll(pieces);
   const question = 'How long do I have to return Heritage shoes?';
-  final best = await ranker.rank(question, top: 2);
-  final bestPieces = best.map((match) => match.chunk.text).join('\n\n');
+  final bestPieces = (await ranker.rank(question, top: 2)).bestPieces;
 
   // Step 4: ask the chat model, giving it only those pieces.
   final reply = await ollama.chat(

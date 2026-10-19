@@ -12,7 +12,8 @@ First release, extracted from the local_rag demo app.
 - `OllamaClient` with `chat`, `chatStream`, `embed` and `connect`, and
   `OllamaLauncher` to start and stop `ollama serve` on macOS and Linux.
 - `SimilarityRanker`, which finds the chunks closest in meaning to a
-  question, with `top`, `maxPerSource` and `minScore` options.
+  question, with `top`, `maxPerSource` and `minScore` options, and
+  `bestPieces` to join the results' text for a prompt.
 - The `VectorStore` interface, a ready-made `InMemoryVectorStore`,
   `cosineSimilarity` and `capPerSource`.
 - `findSupportedFiles` for loading a folder of documents.

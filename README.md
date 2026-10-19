@@ -70,15 +70,15 @@ final ranker = SimilarityRanker(ollama, model: 'all-minilm');
 await ranker.addAll(pieces);
 
 const question = 'How long do I have to return Heritage shoes?';
-final best = await ranker.rank(question, top: 2);
-final bestPieces = best.map((match) => match.chunk.text).join('\n\n');
+final bestPieces = (await ranker.rank(question, top: 2)).bestPieces;
 ```
 
 The ranker is the search. When you add pieces, it uses the `all-minilm`
 model to describe the *meaning* of each one, so pieces about the same topic
 are recognised as similar even when they use different words. `rank` then
 compares the question with every piece and returns the closest ones, best
-first. `top: 2` asks for the best two.
+first. `top: 2` asks for the best two, and `bestPieces` joins their text
+into one block, ready to hand to the chat model.
 
 You can also limit how many pieces come from one file (`maxPerSource`) and
 leave out loosely related ones (`minScore`). The
