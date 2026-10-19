@@ -1,3 +1,9 @@
+## Unreleased
+
+- `OllamaLauncher` starts and stops Ollama on Windows: it finds `ollama.exe`
+  in the installer's folder, Program Files or on PATH, and stops it with
+  `taskkill`, tray app first.
+
 ## 0.1.0
 
 First release, extracted from the local_rag demo app.

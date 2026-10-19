@@ -36,8 +36,9 @@ enum LaunchOutcome {
 /// It runs a process, so a sandboxed macOS app needs the App Sandbox off
 /// (`com.apple.security.app-sandbox` set to false in the entitlements).
 ///
-/// Starting and stopping work on macOS and Linux; on Windows, start Ollama
-/// yourself and use [OllamaClient] directly.
+/// Starting and stopping work on macOS, Linux and Windows. On Windows it
+/// looks for `ollama.exe` where the official installer puts it, then on
+/// PATH, and stops it with `taskkill`.
 ///
 /// The server is started fully detached, so it keeps running after the app
 /// quits. `detachedWithStdio` is not enough: its pipes close with the app and

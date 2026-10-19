@@ -113,10 +113,9 @@ nothing is answering and the base URL is on this machine, and throws an `OllamaE
 isn't installed or won't start. `OllamaLauncher` exposes the start and stop
 steps on their own.
 
-Starting and stopping Ollama works on macOS and Linux. On Windows, start
-Ollama yourself; the client works the same. A sandboxed macOS app can't
-start processes, so turn off `com.apple.security.app-sandbox` if you want the
-app to launch Ollama.
+Starting and stopping Ollama works on macOS, Linux and Windows. A sandboxed
+macOS app can't start processes, so turn off `com.apple.security.app-sandbox`
+if you want the app to launch Ollama.
 
 ### Vector stores
 
