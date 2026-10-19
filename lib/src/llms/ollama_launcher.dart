@@ -6,7 +6,8 @@ import 'ollama_client.dart';
 /// Starts `ollama serve` detached and returns its pid.
 typedef OllamaSpawn = Future<int?> Function(String executable);
 
-/// Runs a short command (`pgrep`, `kill`) and waits for it.
+/// Runs a short command (`pgrep`, `kill`, `tasklist`, `taskkill`, `where`)
+/// and waits for it.
 typedef ProcessRunner =
     Future<ProcessResult> Function(String executable, List<String> arguments);
 
@@ -51,7 +52,11 @@ class OllamaLauncher {
     List<String>? searchPaths,
     OllamaSpawn? spawn,
     ProcessRunner? run,
-  }) : _searchPaths = searchPaths ?? defaultSearchPaths(),
+    bool? isWindows,
+  }) : isWindows = isWindows ?? Platform.isWindows,
+       _searchPaths =
+           searchPaths ??
+           defaultSearchPaths(windows: isWindows ?? Platform.isWindows),
        _spawn = spawn ?? ((exe) => _startDetached(exe, _client.baseUrl)),
        _run = run ?? Process.run;
 
@@ -69,6 +74,10 @@ class OllamaLauncher {
   /// does the same, so a quiet port alone does not mean it stopped.
   final Duration restartGrace;
 
+  /// Whether to use the Windows tools (`where`, `tasklist`, `taskkill`)
+  /// instead of the Unix ones. Defaults to [Platform.isWindows].
+  final bool isWindows;
+
   int? _spawnedPid; // the server we started, if any
   String? _lastSpawnError;
 
@@ -77,8 +86,26 @@ class OllamaLauncher {
 
   /// Where to look for `ollama`. A macOS GUI app does not get the shell's
   /// PATH, so the usual install locations are listed explicitly.
-  static List<String> defaultSearchPaths() {
-    final home = Platform.environment['HOME'] ?? '';
+  ///
+  /// On Windows ([windows], which defaults to [Platform.isWindows]) these are
+  /// the official installer's per-user location and Program Files, read from
+  /// [environment] (defaults to [Platform.environment]).
+  static List<String> defaultSearchPaths({
+    bool? windows,
+    Map<String, String>? environment,
+  }) {
+    final env = environment ?? Platform.environment;
+    if (windows ?? Platform.isWindows) {
+      final localAppData = env['LOCALAPPDATA'] ?? '';
+      final programFiles = env['ProgramFiles'] ?? '';
+      return [
+        // ollama.com installer
+        if (localAppData.isNotEmpty)
+          '$localAppData\\Programs\\Ollama\\ollama.exe',
+        if (programFiles.isNotEmpty) '$programFiles\\Ollama\\ollama.exe',
+      ];
+    }
+    final home = env['HOME'] ?? '';
     return [
       '/usr/local/bin/ollama', // ollama.com installer
       '/opt/homebrew/bin/ollama', // Homebrew, Apple silicon
@@ -97,6 +124,25 @@ class OllamaLauncher {
     return resolvedPath = null;
   }
 
+  /// On Windows, the `ollama.exe` that `where ollama` finds on PATH, or null.
+  /// Elsewhere PATH is not searched, since a macOS GUI app does not get the
+  /// shell's PATH anyway.
+  Future<String?> _resolveOnPath() async {
+    if (!isWindows) return null;
+    try {
+      final result = await _run('where', const ['ollama']);
+      if (result.exitCode != 0) return null;
+      for (final line in '${result.stdout}'.split('\n')) {
+        if (line.trim() case final path when path.isNotEmpty) {
+          return resolvedPath = path;
+        }
+      }
+    } on Object {
+      // No `where`; treat it as not installed.
+    }
+    return null;
+  }
+
   Future<bool> _isAnswering() async => await _client.version() != null;
 
   /// Makes sure the server is answering, starting it if needed.
@@ -110,7 +156,7 @@ class OllamaLauncher {
     if (await _isAnswering()) return LaunchOutcome.alreadyRunning;
     if (!isLoopback(_client.baseUrl)) return LaunchOutcome.unreachable;
 
-    final binary = resolve();
+    final binary = resolve() ?? await _resolveOnPath();
     if (binary == null) return LaunchOutcome.notInstalled;
 
     _lastSpawnError = null;

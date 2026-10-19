@@ -313,11 +313,99 @@ void main() {
   });
 
   test('default search paths cover installer and Homebrew locations', () {
-    final paths = OllamaLauncher.defaultSearchPaths();
+    final paths = OllamaLauncher.defaultSearchPaths(windows: false);
     expect(paths, contains('/usr/local/bin/ollama'));
     expect(paths, contains('/opt/homebrew/bin/ollama'));
     // A GUI app gets a minimal PATH, so these must be explicit, not searched.
     expect(paths.every((p) => p.startsWith('/')), isTrue);
+  });
+
+  group('Windows', () {
+    test('default search paths are the installer and Program Files', () {
+      final paths = OllamaLauncher.defaultSearchPaths(
+        windows: true,
+        environment: const {
+          'LOCALAPPDATA': r'C:\Users\ada\AppData\Local',
+          'ProgramFiles': r'C:\Program Files',
+        },
+      );
+      expect(paths, <String>[
+        r'C:\Users\ada\AppData\Local\Programs\Ollama\ollama.exe',
+        r'C:\Program Files\Ollama\ollama.exe',
+      ]);
+    });
+
+    test('unset folders are left out of the search paths', () {
+      final paths = OllamaLauncher.defaultSearchPaths(
+        windows: true,
+        environment: const {},
+      );
+      expect(paths, isEmpty);
+    });
+
+    OllamaLauncher onPath(
+      Future<ProcessResult> Function(String exe, List<String> args) run, {
+      required void Function(String executable) onSpawn,
+      bool isWindows = true,
+    }) => OllamaLauncher(
+      clientThatIsUp(() => false),
+      searchPaths: <String>[r'C:\nowhere\ollama.exe'],
+      spawn: (executable) async {
+        onSpawn(executable);
+        return 4242;
+      },
+      run: run,
+      isWindows: isWindows,
+      startupTimeout: const Duration(milliseconds: 100),
+      pollInterval: const Duration(milliseconds: 20),
+    );
+
+    test('falls back to the ollama.exe that where finds on PATH', () async {
+      String? spawned;
+      final ran = <List<String>>[];
+      final l = onPath((exe, args) async {
+        ran.add(<String>[exe, ...args]);
+        return ProcessResult(
+          0,
+          0,
+          'C:\\tools\\ollama.exe\r\nC:\\other\\ollama.exe\r\n',
+          '',
+        );
+      }, onSpawn: (exe) => spawned = exe);
+
+      expect(await l.ensureRunning(), LaunchOutcome.timedOut);
+      expect(ran, [
+        <String>['where', 'ollama'],
+      ]);
+      expect(spawned, r'C:\tools\ollama.exe');
+      expect(l.resolvedPath, r'C:\tools\ollama.exe');
+    });
+
+    test('where finding nothing is reported as not installed', () async {
+      var spawned = false;
+      final l = onPath(
+        (_, _) async => ProcessResult(0, 1, '', 'INFO: Could not find files'),
+        onSpawn: (_) => spawned = true,
+      );
+
+      expect(await l.ensureRunning(), LaunchOutcome.notInstalled);
+      expect(spawned, isFalse);
+    });
+
+    test('PATH is not searched on macOS and Linux', () async {
+      final ran = <List<String>>[];
+      final l = onPath(
+        (exe, args) async {
+          ran.add(<String>[exe, ...args]);
+          return ProcessResult(0, 0, '/usr/bin/ollama', '');
+        },
+        onSpawn: (_) {},
+        isWindows: false,
+      );
+
+      expect(await l.ensureRunning(), LaunchOutcome.notInstalled);
+      expect(ran, isEmpty);
+    });
   });
 
   group('base URL', () {
