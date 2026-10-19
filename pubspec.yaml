@@ -1,0 +1,24 @@
+name: rag_blocks
+description: >-
+  The building blocks of a local RAG pipeline in pure Dart: a recursive text
+  splitter, CSV-to-prose, exact table arithmetic, a query condenser, an Ollama
+  client and vector-store helpers. No Flutter, no Python, no server.
+version: 0.1.0
+topics:
+  - rag
+  - ollama
+  - llm
+  - embeddings
+  - ai
+
+environment:
+  sdk: ^3.12.1
+
+# Only package:http. Anything heavier (Flutter, ObjectBox) belongs to the app
+# that composes these pieces, so this package runs under the plain Dart VM.
+dependencies:
+  http: ^1.6.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.29.0
