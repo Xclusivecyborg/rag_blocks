@@ -217,4 +217,32 @@ void main() {
       );
     });
   });
+
+  group('arguments', () {
+    test('a non-positive chunk size is rejected instead of looping', () {
+      for (final size in [0, -1]) {
+        expect(
+          () => RecursiveCharacterTextSplitter(
+            chunkSize: size,
+            chunkOverlap: 0,
+          ).splitText('text', source: 'x'),
+          throwsArgumentError,
+        );
+      }
+    });
+
+    test('an overlap outside 0 to chunkSize is rejected', () {
+      for (final overlap in [-1, 100, 150]) {
+        expect(
+          () => chunkDocument(
+            'text',
+            source: 'x',
+            chunkSize: 100,
+            chunkOverlap: overlap,
+          ),
+          throwsArgumentError,
+        );
+      }
+    });
+  });
 }

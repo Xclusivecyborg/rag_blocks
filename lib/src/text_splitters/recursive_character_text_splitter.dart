@@ -76,12 +76,25 @@ class RecursiveCharacterTextSplitter {
 }
 
 /// [RecursiveCharacterTextSplitter.splitText] as a function, for one-off use.
+///
+/// Throws [ArgumentError] unless `0 < chunkSize` and
+/// `0 <= chunkOverlap < chunkSize`.
 List<Chunk> chunkDocument(
   String raw, {
   required String source,
   int chunkSize = defaultChunkSize,
   int chunkOverlap = defaultChunkOverlap,
 }) {
+  if (chunkSize <= 0) {
+    throw ArgumentError.value(chunkSize, 'chunkSize', 'must be positive');
+  }
+  if (chunkOverlap < 0 || chunkOverlap >= chunkSize) {
+    throw ArgumentError.value(
+      chunkOverlap,
+      'chunkOverlap',
+      'must be at least 0 and less than chunkSize ($chunkSize)',
+    );
+  }
   final unified = raw.replaceAll('\r\n', '\n');
   final text = unified.trim();
   if (text.isEmpty) return const [];

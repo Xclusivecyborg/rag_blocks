@@ -61,4 +61,11 @@ void main() {
       throwsA(isA<OllamaException>()),
     );
   });
+
+  test('embed rejects a non-positive batch size instead of looping', () {
+    expect(
+      () => fakeOllama([]).embed(model: 'm', input: ['a'], batchSize: 0),
+      throwsArgumentError,
+    );
+  });
 }
