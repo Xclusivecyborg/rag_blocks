@@ -1,861 +1,233 @@
 # rag_blocks
 
-Building blocks for letting an AI answer questions about **your own
-documents**, written in pure Dart and running entirely on your own computer.
+Let an AI answer questions about **your own documents**, in pure Dart,
+entirely on your own computer. No cloud account, no API key, and your files
+never leave the machine. The AI runs through [Ollama](https://ollama.com), a
+free app for running AI models locally.
 
-Your files never leave the machine. There is no cloud account, no API key and
-no monthly bill. The AI runs locally through [Ollama](https://ollama.com), a
-free app that runs AI models on your own computer.
+## How it works
 
-- [What this package is for](#what-this-package-is-for)
-- [What's in the box](#whats-in-the-box)
-- [Before you start](#before-you-start)
-- [Quick start](#quick-start)
-- [The blocks, one by one](#the-blocks-one-by-one)
-- [Putting it all together](#putting-it-all-together)
-- [Choosing settings](#choosing-settings)
-- [Where it runs](#where-it-runs)
-- [Troubleshooting](#troubleshooting)
-- [What it doesn't do (yet)](#what-it-doesnt-do-yet)
-- [Words used in this README](#words-used-in-this-readme)
+A chat AI has never seen your documents, so if you ask it about your returns
+policy it will guess. The fix, known as **RAG**, works like an open-book exam:
 
-## What this package is for
-
-Ask a chat AI about your company's returns policy and it will make something
-up, because it has never seen your policy. The fix is called **RAG**
-(retrieval-augmented generation), which sounds harder than it is:
-
-1. **Look it up.** Find the few passages in your files that relate to the
+1. **Look it up:** find the few passages in your files that relate to the
    question.
-2. **Hand them over.** Paste those passages into the message you send to
-   the AI.
-3. **Answer from them.** Tell the AI to answer using only those passages.
+2. **Hand them over:** include those passages in the message to the AI.
+3. **Answer from them:** tell the AI to answer using only those passages.
 
-It's like an open-book exam: the AI doesn't need to know your documents,
-because it is shown the right page before it answers.
+This package gives you each step as a separate building block, like
+[LangChain](https://www.langchain.com) does in Python. Use only the ones you
+need.
 
-This package gives you each step as a separate piece, the way
-[LangChain](https://www.langchain.com) does in Python. You use only the
-pieces you need, in the order you want.
+## Setup
 
-## What's in the box
+1. Install Ollama from [ollama.com](https://ollama.com) (or `brew install
+   ollama` on a Mac).
+2. Download two AI models: a small one that powers the search, and one that
+   writes the answers.
 
-| Block | What it does, in plain words |
-|---|---|
-| `findSupportedFiles` | Lists the readable documents in a folder. |
-| `RecursiveCharacterTextSplitter` | Cuts long documents into short passages, so the search can find the exact part that matters. |
-| `csvToProse` | Rewrites spreadsheet rows as sentences, which search understands much better. |
-| `CsvTable` + `TableQueryPlanner` | Answers "what was the total / average / highest…" by doing the maths over **every** row, instead of letting the AI guess. |
-| `QueryCondenser` | Shortens rambling questions and completes follow-ups like "and the Abuja one?" before searching. |
-| `OllamaClient` | Talks to Ollama: turns text into search fingerprints, and gets chat replies (all at once or word by word). |
-| `OllamaLauncher` | Starts and stops Ollama for you, so your users don't have to open a terminal. |
-| `VectorStore` + `capPerSource` | The shape of a search index you plug in, plus a rule that stops one big file from crowding out the rest. |
+   ```bash
+   ollama pull all-minilm
+   ollama pull llama3.2
+   ```
 
-How they fit together:
+3. Add the package to your Dart or Flutter project:
 
-```text
-  Your files ──► findSupportedFiles ──► splitter / csvToProse ──► passages
-                                                                     │
-                                                         OllamaClient.embed
-                                                                     ▼
-                                                               VectorStore
-                                                                     │
-  Question ──► QueryCondenser ──► OllamaClient.embedOne ──► search ──┘
-      │                                                       │
-      │                                              best passages
-      ▼                                                       ▼
-  TableQueryPlanner ── exact figure (if it's a maths question) ──► OllamaClient.chat ──► Answer
-```
-
-## Before you start
-
-**1. Install Ollama** from [ollama.com](https://ollama.com), or on a Mac with
-`brew install ollama`.
-
-**2. Download two models.** You need one model for searching and one for
-answering:
-
-```bash
-ollama pull all-minilm
-ollama pull llama3.2
-```
-
-- `all-minilm` (about 45 MB) turns text into a list of numbers that captures
-  its meaning, a kind of "meaning fingerprint". Texts about the same thing
-  get similar fingerprints, and that is how the search works. These are
-  called **embeddings**.
-- `llama3.2` (about 2 GB) is the chat model that writes the answers.
-
-Any other Ollama models work too. See [Choosing settings](#choosing-settings).
-
-**3. Add the package:**
-
-```bash
-dart pub add rag_blocks
-```
-
-It works in command-line tools, Flutter apps and servers. Its only dependency
-is `package:http`.
+   ```bash
+   dart pub add rag_blocks
+   ```
 
 ## Quick start
 
-This complete program answers a question from a small handbook. Save it as
-`bin/main.dart` and run `dart run`.
+Let's give the AI a short shop handbook and ask it a question it could only
+answer by reading it. The program does four things.
+
+**Step 1: Connect to Ollama.**
 
 ```dart
-import 'dart:math' as math;
-
-import 'package:rag_blocks/rag_blocks.dart';
-
-const handbook = '''
-Customers may return unworn footwear within 21 days of purchase for a full
-refund. The Heritage line carries an extended 45-day returns window.
-
-Full-time employees get 20 working days of paid annual leave per year.
-All employees receive a 40% discount on the Everyday line.''';
-
-Future<void> main() async {
-  // Connect to Ollama, starting it first if it isn't running.
-  final ollama = await OllamaClient.connect(onStatus: print);
-
-  // 1. Cut the document into short passages.
-  final splitter = RecursiveCharacterTextSplitter(chunkSize: 200, chunkOverlap: 40);
-  final passages = splitter.splitText(handbook, source: 'handbook.md');
-
-  // 2. Make a meaning fingerprint for every passage.
-  final fingerprints = await ollama.embed(
-    model: 'all-minilm',
-    input: [for (final p in passages) p.text],
-  );
-
-  // 3. Make one for the question, and find the closest passages.
-  const question = 'How long do I have to return Heritage shoes?';
-  final q = await ollama.embedOne(model: 'all-minilm', input: question);
-  final ranked = [
-    for (var i = 0; i < passages.length; i++)
-      (text: passages[i].text, score: similarity(q, fingerprints[i])),
-  ]..sort((a, b) => b.score.compareTo(a.score));
-  final excerpts = ranked.take(2).map((r) => r.text).join('\n\n');
-
-  // 4. Ask the chat model to answer from those passages only.
-  final reply = await ollama.chat(
-    model: 'llama3.2',
-    messages: [
-      const ChatMessage(
-        'system',
-        'Answer using only the excerpts. If they do not say, reply "I don\'t know."',
-      ),
-      ChatMessage('user', 'Excerpts:\n$excerpts\n\nQuestion: $question'),
-    ],
-  );
-  print(reply.content); // Heritage shoes can be returned within 45 days.
-
-  ollama.close();
-}
-
-/// How alike two fingerprints are: 1 means the same meaning, 0 means unrelated.
-double similarity(List<double> a, List<double> b) {
-  var dot = 0.0, na = 0.0, nb = 0.0;
-  for (var i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return dot / (math.sqrt(na) * math.sqrt(nb));
-}
-```
-
-The same program is in [`example/main.dart`](example/main.dart).
-
-## The blocks, one by one
-
-### Loading a folder: `findSupportedFiles`
-
-It lists every document in a folder and its subfolders that the other blocks
-can read: `.txt`, `.md`, `.markdown`, `.csv`, `.json` and `.log`. Hidden
-files and hidden folders (like `.git`) are skipped, and the list comes back
-in alphabetical order.
-
-```dart
-import 'dart:io';
-
-import 'package:rag_blocks/rag_blocks.dart';
-
-Future<void> main() async {
-  final files = await findSupportedFiles(Directory('knowledge_base'));
-
-  for (final file in files) {
-    final text = await file.readAsString();
-    final isSpreadsheet = fileExtension(file.path) == '.csv';
-    print('${file.path}: ${text.length} characters, spreadsheet: $isSpreadsheet');
-  }
-}
-```
-
-It only finds the files. Reading them is up to you, which means you can
-also add your own types, for example by converting PDFs to text first.
-
-### Cutting documents into passages: `RecursiveCharacterTextSplitter`
-
-**Why:** a search compares the question with each passage as a whole. A
-20-page document is about many things at once, so it matches every question
-a little and none of them well. Short passages are each about one thing, so
-the right one stands out.
-
-**How it cuts:** it tries to break between paragraphs first, then between
-sentences, and only cuts mid-sentence when a sentence is longer than the
-limit. No passage is ever longer than `chunkSize` characters.
-
-**Overlap:** the end of each passage is repeated at the start of the next,
-so a fact that sits right on a cut still appears whole in one of them.
-
-```dart
-const policies = '''
-Customers may return unworn footwear within 21 days of purchase for a full refund. Items must be in their original box.
-
-The Heritage line carries an extended 45-day returns window. Sale items can be exchanged but not refunded.
-
-Full-time employees accrue 20 working days of paid annual leave per year.''';
-
-final splitter = RecursiveCharacterTextSplitter(chunkSize: 160, chunkOverlap: 40);
-final passages = splitter.splitText(policies, source: 'policies.md');
-
-for (final p in passages) {
-  print('#${p.index} (characters ${p.start}–${p.end} of ${p.source})');
-  print(p.text);
-}
-```
-
-Output, shortened:
-
-```text
-#0 (characters 0–119 of policies.md)
-Customers may return unworn footwear within 21 days of purchase for a full refund. Items must be in their original box.
-#1 (characters 121–227 of policies.md)
-Items must be in their original box.
-
-The Heritage line carries an extended 45-day returns window. Sale items can be exchanged but not refunded.
-#2 (characters 229–302 of policies.md)
-...
-```
-
-Passage #1 starts with the last sentence of #0. That's the overlap.
-
-**Showing where an answer came from:** every passage remembers where it sits
-in the original file (`start` and `end`), so you can show a "source" link or
-highlight the passage:
-
-```dart
-final p = passages.first;
-final original = policies.substring(p.start, p.end);
-print('From ${p.source}: "$original"');
-```
-
-For a single document you can call the function form instead:
-`chunkDocument(text, source: 'notes.md', chunkSize: 400)`.
-
-### Spreadsheets the search can understand: `csvToProse`
-
-A spreadsheet row like `SHO-114,Lagos,2021-03-02,12` means nothing out of
-context. The search can't tell that `Lagos` is a city or that `12` is a
-number of staff. `csvToProse` writes each row out as a sentence with its
-column names:
-
-```dart
-const branches = '''
-branch,city,opened,staff
-SHO-114,Lagos,2021-03-02,12
-SHO-201,Abuja,2023-07-15,8''';
-
-print(csvToProse(branches));
-```
-
-```text
-Record 1. branch: SHO-114. city: Lagos. opened: 2021-03-02. staff: 12.
-
-Record 2. branch: SHO-201. city: Abuja. opened: 2023-07-15. staff: 8.
-```
-
-Now "How many staff are at the Lagos branch?" finds record 1. Pass the result
-to the splitter like any other text. Each record is its own paragraph, so
-records are never cut in half.
-
-Quoted values that contain commas or line breaks (`"Doe, Jane"`) are handled.
-
-### Exact maths over spreadsheets: `CsvTable` and `TableQueryPlanner`
-
-**The problem:** the search only hands the AI a few passages. Ask "what was
-our total revenue in January?" and the AI sees 5 of the 80 January rows,
-adds them up, and gives a confident wrong number.
-
-**The fix:** keep the spreadsheet as a table too. When a question is clearly
-a calculation, do the maths in code over every row and give the AI the exact
-figure.
-
-```dart
-final sales = CsvTable.parse(
-  File('sales_q1_2026.csv').readAsStringSync(),
-  source: 'sales_q1_2026.csv',
-);
-
-final result = TableQueryPlanner.answer(
-  [sales],
-  'What was total revenue in January 2026?',
-);
-
-if (result != null) {
-  print(result.toPromptBlock());
-}
-```
-
-```text
-Total revenue_ngn in January 2026: 71,882,000
-Computed over 80 matching row(s) out of 240 in sales_q1_2026.csv.
-```
-
-Paste that block into the message to the AI, and it will quote the figure
-instead of guessing. The second line matters: it tells the AI that the
-figure covers everything, so it doesn't hedge.
-
-**Questions it understands:**
-
-| You ask | It works out |
-|---|---|
-| "Total revenue in January 2026" | the sum of a column, for one month |
-| "Average units sold by location in Q1 2026" | the average, plus one average per location |
-| "Which location had the highest revenue in March 2026?" | the largest value **and the row it came from** |
-| "Lowest units returned in 2026" | the smallest value and its row |
-| "Total revenue for the Heritage line in February 2026" | a sum over only the Heritage rows |
-| "How many records for Online?" | a count of rows |
-
-For example, "Average units sold by location in Q1 2026" gives:
-
-```text
-Average units_sold in Q1 2026: 18.21
-Computed over 240 matching row(s) out of 240 in sales_q1_2026.csv.
-Breakdown:
-  Ikeja City Mall: 20.15
-  Online: 18.63
-  Port Harcourt: 8.29
-  Victoria Island: 28.29
-  Wuse 2 Abuja: 15.69
-```
-
-And "Which location had the highest revenue in March 2026?" adds the row
-that answers "which":
-
-```text
-Maximum revenue_ngn in March 2026: 2,997,000
-Computed over 80 matching row(s) out of 240 in sales_q1_2026.csv.
-Found in the row: week_starting=2026-03-09, location=Victoria Island, ...
-```
-
-You can read the same details in code: `result.value`, `result.groups` and
-`result.extremeRow`.
-
-**How it reads a question:**
-
-- **Which column:** it matches words in the question against column names.
-  "revenue" finds `revenue_ngn`, and a few everyday words are understood
-  too ("sales" and "income" mean revenue).
-- **Which rows:** any value from the spreadsheet that appears in the
-  question becomes a filter, such as "Heritage" or "Online".
-- **Which dates:** "January 2026", "Q1 2026" or "2026". A **year is
-  required**, so "January" alone never quietly mixes several years.
-- **Which breakdown:** "by location" or "per product line" splits the result.
-
-**It says "not me" when it isn't sure.** `answer` returns `null` when the
-question isn't clearly a calculation, or when two columns match equally
-well. That's on purpose: "How much annual leave do staff get?" contains "how
-much" but must not come back as the sum of a sales column. When you get
-`null`, use the normal search instead.
-
-You can also skip the question reading and ask directly:
-
-```dart
-final heritageFebruary = sales.aggregate(
-  TableQuery(
-    aggregate: Aggregate.sum,
-    metric: 'revenue_ngn',
-    filters: const [ColumnFilter('product_line', 'Heritage')],
-    range: DateRange(DateTime(2026, 2), DateTime(2026, 3), 'February 2026'),
-  ),
-);
-print(heritageFebruary?.value); // 8924000
-```
-
-**Saving tables between runs:** reading a large CSV every time is wasteful,
-so save the tables next to your search index:
-
-```dart
-File('tables.json').writeAsStringSync(CsvTable.encodeAll([sales]));
-
-// Later, or on the next launch:
-final tables = CsvTable.decodeAll(File('tables.json').readAsStringSync());
-```
-
-`decodeAll` returns an empty list instead of crashing if the file is damaged.
-If that happens, just read the CSVs again.
-
-### Better questions, better searches: `QueryCondenser`
-
-**The problem:** the search compares meaning, and everything in the question
-counts. "How much discount will I get if I buy shoes worth 100,000 naira as
-an employee?" is mostly about shoes and money, so the staff handbook,
-which talks about the *employee discount*, ranks far down the list.
-
-Follow-ups are worse. "And the Abuja one?" means nothing by itself.
-
-**The fix:** before searching, ask the chat model to boil the question down
-to a few search words, using the conversation so far:
-
-```dart
-final condenser = QueryCondenser(ollama);
-
-final first = await condenser.condense(
-  model: 'llama3.2',
-  question: 'How much discount will I get if I buy shoes worth 100,000 naira '
-      'as an employee?',
-);
-print(first.text); // employee discount policy
-
-final followUp = await condenser.condense(
-  model: 'llama3.2',
-  question: 'and the Abuja one?',
-  history: ['Where is the Lagos branch?'],
-);
-print(followUp.text); // Abuja branch location
-
-// Search with the short version...
-final searchFingerprint = await ollama.embedOne(
-  model: 'all-minilm',
-  input: followUp.text,
-);
-// ...but send the user's original words to the chat model.
-```
-
-**It never makes things worse.** If the model is slow, unreachable, refuses,
-or replies with something that doesn't look like a search query, you get
-the original question back. It never throws. You can see what happened:
-
-```dart
-if (!first.wasCondensed) {
-  print('Kept the original question: ${first.note}');
-  // e.g. "short question, left alone" or "condense failed: ..."
-}
-```
-
-Short questions (under 8 words) with no conversation history are left
-alone, because they are already good search queries. That also saves a call
-to the model.
-
-Settings: `QueryCondenser(ollama, timeout: Duration(seconds: 10))` controls
-how long to wait. If you use a "thinking" model (one that reasons before it
-answers), pass `thinkingModel: true` to skip the reasoning; a rewrite this
-small doesn't need it.
-
-### Talking to the AI: `OllamaClient`
-
-**Connecting:**
-
-```dart
-// Recommended: starts Ollama if it isn't running yet, and tells you what's happening.
 final ollama = await OllamaClient.connect(onStatus: print);
-
-// Or connect to an Ollama that is already running, on this or another machine.
-final remote = OllamaClient(baseUrl: Uri.parse('http://192.168.1.20:11434'));
 ```
 
-`connect` only starts Ollama when the address is this computer. If the
-address belongs to another machine and nothing answers, it stops with a
-clear message instead.
+This finds Ollama on your computer and starts it if it isn't running.
+`onStatus: print` prints what it's doing, such as "Starting ollama serve…".
 
-**Seeing which models are installed:**
+**Step 2: Cut the handbook into small pieces.**
 
 ```dart
-for (final model in await ollama.listModels()) {
-  print('$model  chat: ${model.canChat}  search: ${model.canEmbed}  '
-      'thinks: ${model.thinks}  size: ${model.parameterSize}');
-}
+final splitter = RecursiveCharacterTextSplitter(chunkSize: 200, chunkOverlap: 40);
+final pieces = splitter.splitText(handbook, source: 'handbook.md');
 ```
 
-This is handy for a model picker in your app, and for telling users which
-model to download.
+Searching works best on small pieces, because each piece is about one thing.
+`chunkSize: 200` means no piece is longer than 200 characters.
+`chunkOverlap: 40` repeats the last bit of each piece at the start of the
+next, so a sentence that falls on the cut isn't lost.
 
-**Making meaning fingerprints (embeddings):**
+**Step 3: Find the pieces that best match the question.**
 
 ```dart
-// Many texts at once, with progress for a progress bar.
-final vectors = await ollama.embed(
+// Describe every piece as a list of numbers.
+final pieceNumbers = await ollama.embed(
   model: 'all-minilm',
-  input: [for (final p in passages) p.text],
-  onProgress: (done, total) => print('Indexed $done of $total'),
+  input: [for (final p in pieces) p.text],
 );
 
-// Just one, such as the user's question.
-final question = await ollama.embedOne(model: 'all-minilm', input: 'returns window');
+// Describe the question the same way.
+const question = 'How long do I have to return Heritage shoes?';
+final questionNumbers = await ollama.embedOne(model: 'all-minilm', input: question);
+
+// Keep the two pieces whose numbers are closest to the question's.
+final ranked = [
+  for (var i = 0; i < pieces.length; i++)
+    (text: pieces[i].text, score: closeness(questionNumbers, pieceNumbers[i])),
+]..sort((a, b) => b.score.compareTo(a.score));
+final bestPieces = ranked.take(2).map((r) => r.text).join('\n\n');
 ```
 
-Texts are sent in batches of 16. Change that with `batchSize`.
+This is how the search works. The `all-minilm` model reads a piece of text
+and turns it into a list of numbers that describes its *meaning*. Texts
+about the same topic get similar numbers, even when they use different
+words. So we turn every piece and the question into numbers, and pick the
+pieces whose numbers are closest. `closeness` is a small helper, shown in
+the [full program](example/main.dart), that scores two lists from 0
+(unrelated) to 1 (same meaning).
 
-**Getting a whole reply:**
+**Step 4: Ask the chat model, giving it only those pieces.**
 
 ```dart
 final reply = await ollama.chat(
   model: 'llama3.2',
-  messages: const [
-    ChatMessage('system', 'You are a helpful assistant for a shoe shop.'),
-    ChatMessage('user', 'Write a one-line welcome message.'),
+  messages: [
+    const ChatMessage('system', 'Answer using only the excerpts. If they do not say, reply "I don\'t know."'),
+    ChatMessage('user', 'Excerpts:\n$bestPieces\n\nQuestion: $question'),
   ],
-  temperature: 0.2, // lower is more predictable, higher is more creative
 );
-print(reply.content);
+print(reply.content); // Heritage shoes can be returned within 45 days.
 ```
 
-**Showing the reply as it's written:** for a chat screen, show the words as
-they arrive instead of making the user wait for the whole answer:
+The `system` message sets the rules, and the `user` message carries the
+pieces and the question. Because the AI is told to stick to the pieces, it
+answers from your handbook instead of guessing, and says "I don't know"
+when the handbook doesn't cover the question.
 
-```dart
-final stream = ollama.chatStream(model: 'llama3.2', messages: messages);
-await for (final piece in stream) {
-  if (piece.thinking != null) stdout.write('(thinking) ');
-  if (piece.content != null) stdout.write(piece.content);
-}
-```
+The whole program is in [`example/main.dart`](example/main.dart). Run it
+with `dart run example/main.dart`.
 
-To add a "Stop" button, cancel the stream subscription. That closes the
-connection and Ollama stops writing.
+## The blocks
 
-**Thinking models** (such as `gpt-oss` or `qwen3`) reason before they
-answer, and that reasoning arrives in `thinking`. Pass `think: false` to
-`chat` or `chatStream` to skip it and get a faster answer.
-
-**When something goes wrong,** for example Ollama isn't running or the
-model isn't downloaded, the methods throw an `OllamaException` whose message
-explains the problem. `version()` is the exception: it returns `null`
-instead, so you can use it to check whether Ollama is up.
-
-### Starting and stopping Ollama: `OllamaLauncher`
-
-`OllamaClient.connect()` already starts Ollama when it needs to. Use the
-launcher directly when you want your own "Start" and "Stop" buttons:
-
-```dart
-final ollama = OllamaClient();
-final launcher = OllamaLauncher(ollama);
-
-final started = await launcher.ensureRunning(onStatus: print);
-if (!started.isUp) {
-  print(launcher.explainLaunch(started)); // e.g. how to install Ollama
-}
-
-// Later, from a "Stop" button:
-final stopped = await launcher.stop(onStatus: print);
-final problem = launcher.explainStop(stopped);
-if (problem.isNotEmpty) print(problem);
-```
-
-Things to know:
-
-- Ollama keeps running after your app quits. That's deliberate, so the
-  next launch is instant.
-- `stop` also closes the Ollama menu-bar app on macOS, because otherwise it
-  starts the server again a second later.
-- Starting and stopping works on macOS and Linux. On Windows, start Ollama
-  yourself. Everything else in the package works the same.
-- A Mac app from the App Store "sandbox" isn't allowed to start other
-  programs. To use the launcher in a Mac app, set
-  `com.apple.security.app-sandbox` to `false` in its entitlements file.
-
-### Storing and searching passages: `VectorStore` and `capPerSource`
-
-Comparing a question with every passage one by one, as the quick start does,
-is fine for a few hundred passages. For more, you'll want a proper search
-index (a "vector database") such as ObjectBox or sqlite-vec.
-
-This package doesn't include one. Instead it describes what a store must be
-able to do (`VectorStore`), so the rest of your code doesn't care which one
-you pick. Here's a complete in-memory store you can start with and swap out
-later:
-
-```dart
-import 'dart:math' as math;
-
-import 'package:rag_blocks/rag_blocks.dart';
-
-class MemoryVectorStore implements VectorStore {
-  MemoryVectorStore(this.embeddingModel);
-
-  @override
-  final String embeddingModel;
-
-  final _stored = <StoredChunk>[];
-
-  @override
-  int get size => _stored.length;
-
-  @override
-  bool get isEmpty => _stored.isEmpty;
-
-  @override
-  void addAll(List<Chunk> chunks, List<List<double>> embeddings) {
-    for (var i = 0; i < chunks.length; i++) {
-      final c = chunks[i];
-      _stored.add(
-        StoredChunk(
-          text: c.text,
-          source: c.source,
-          index: c.index,
-          start: c.start,
-          end: c.end,
-          embedding: _normalise(embeddings[i]),
-        ),
-      );
-    }
-  }
-
-  @override
-  List<ScoredChunk> search(
-    List<double> queryEmbedding, {
-    int k = 5,
-    int? maxPerSource,
-    bool exact = false, // a list is always exact
-  }) {
-    final query = _normalise(queryEmbedding);
-    final scored = [
-      for (final c in _stored) ScoredChunk(c, _dot(query, c.embedding)),
-    ]..sort((a, b) => b.score.compareTo(a.score));
-    return capPerSource(scored, k, maxPerSource);
-  }
-
-  static List<double> _normalise(List<double> v) {
-    final length = math.sqrt(_dot(v, v));
-    return [for (final x in v) x / length];
-  }
-
-  static double _dot(List<double> a, List<double> b) {
-    var sum = 0.0;
-    for (var i = 0; i < a.length; i++) {
-      sum += a[i] * b[i];
-    }
-    return sum;
-  }
-}
-```
-
-Using it:
-
-```dart
-final store = MemoryVectorStore('all-minilm');
-store.addAll(passages, await ollama.embed(model: store.embeddingModel, input: [
-  for (final p in passages) p.text,
-]));
-
-final hits = store.search(
-  await ollama.embedOne(model: store.embeddingModel, input: 'returns window'),
-  k: 4,
-  maxPerSource: 2,
-);
-for (final hit in hits) {
-  print('${hit.score.toStringAsFixed(2)}  ${hit.chunk.source}: ${hit.chunk.text}');
-}
-```
-
-Always search with **the same model** you used to fill the store. Each model
-makes its own kind of fingerprint, and fingerprints from different models
-can't be compared. That's why the store remembers `embeddingModel`.
-
-**`capPerSource` stops one file from taking every slot.** A 240-row
-spreadsheet can produce dozens of passages that all look a bit like a sales
-question, and fill the top 5 results by themselves. The policy document
-that actually answers the question never gets shown. `capPerSource(hits, 5,
-2)` keeps the best 5 overall but takes at most 2 from any one file.
-
-## Putting it all together
-
-A typical "answer a question" function tries the exact maths first, then
-falls back to searching:
-
-```dart
-Future<String> answer(
-  String question, {
-  required OllamaClient ollama,
-  required VectorStore store,
-  required List<CsvTable> tables,
-  List<String> history = const [],
-}) async {
-  // 1. A calculation over a spreadsheet? Then work it out exactly.
-  final figure = TableQueryPlanner.answer(tables, question);
-
-  // 2. Find the passages, using a shortened version of the question.
-  final condensed = await QueryCondenser(ollama).condense(
-    model: 'llama3.2',
-    question: question,
-    history: history,
-  );
-  final hits = store.search(
-    await ollama.embedOne(model: store.embeddingModel, input: condensed.text),
-    k: 5,
-    maxPerSource: 2,
-  );
-  final excerpts = [
-    for (final hit in hits) '[${hit.chunk.source}]\n${hit.chunk.text}',
-  ].join('\n\n');
-
-  // 3. Ask, with the exact figure (if any) and the passages.
-  final reply = await ollama.chat(
-    model: 'llama3.2',
-    messages: [
-      const ChatMessage(
-        'system',
-        'Answer using only the information below. If a computed figure is '
-            'given, use it exactly. If the answer is not there, say so.',
-      ),
-      ChatMessage('user', [
-        if (figure != null) 'Computed figure:\n${figure.toPromptBlock()}',
-        'Excerpts:\n$excerpts',
-        'Question: $question',
-      ].join('\n\n')),
-    ],
-  );
-  return reply.content ?? '';
-}
-```
-
-Notice that the short, condensed question is used for searching, while the
-chat model sees the user's own words.
-
-To index a whole folder, combine the loader, `csvToProse` and the splitter:
-
-```dart
-final splitter = RecursiveCharacterTextSplitter();
-final tables = <CsvTable>[];
-final passages = <Chunk>[];
-
-for (final file in await findSupportedFiles(Directory('knowledge_base'))) {
-  final name = file.uri.pathSegments.last;
-  var text = await file.readAsString();
-  if (fileExtension(name) == '.csv') {
-    tables.add(CsvTable.parse(text, source: name)); // for exact maths
-    text = csvToProse(text); // for searching
-  }
-  passages.addAll(splitter.splitText(text, source: name));
-}
-```
-
-## Choosing settings
-
-**Passage size (`chunkSize`).** The default is 600 characters, about a
-paragraph. Smaller passages match short, specific questions better; larger
-ones keep more context together. In our tests, going from 1,200 to 600
-characters raised the share of short questions that found the right passage
-from 6 in 12 to 10 in 12.
-
-| Your documents | Try |
+| Block | What it does |
 |---|---|
-| FAQs, policies, short notes | 300–600 |
-| Manuals, reports, articles | 600–1,000 |
+| [`findSupportedFiles`](#load-a-folder) | Lists the documents in a folder. |
+| [`RecursiveCharacterTextSplitter`](#cut-text-into-pieces) | Cuts documents into small pieces for searching. |
+| [`csvToProse`](#make-spreadsheets-searchable) | Turns spreadsheet rows into sentences the search understands. |
+| [`CsvTable`, `TableQueryPlanner`](#get-exact-totals-from-spreadsheets) | Works out totals and averages over every row, instead of letting the AI guess. |
+| [`QueryCondenser`](#improve-questions-before-searching) | Shortens long questions and completes follow-ups before searching. |
+| [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, and starts or stops it. |
+| [`VectorStore`, `capPerSource`](#store-and-search-pieces) | Plugs in your own search database. |
 
-**Overlap (`chunkOverlap`).** The default is 200 characters. It must be
-smaller than the passage size. Use about a third of the passage size.
+### Load a folder
 
-**How many passages to send (`k`).** 3 to 6 is usually right. Too few and the
-answer may be missing; too many and small models lose focus.
+Lists every `.txt`, `.md`, `.csv`, `.json` and `.log` file in a folder and
+its subfolders, skipping hidden ones like `.git`.
 
-**Models.**
+```dart
+final files = await findSupportedFiles(Directory('knowledge_base'));
+```
 
-| Job | Small and fast | Better quality |
-|---|---|---|
-| Searching (embedding) | `all-minilm` | `nomic-embed-text`, `mxbai-embed-large` |
-| Answering (chat) | `llama3.2` | `qwen3`, `gpt-oss` |
+### Cut text into pieces
 
-If you change the embedding model, index your documents again (see the
-note on the same model above).
+Cuts between paragraphs first, then between sentences, and never makes a
+piece longer than `chunkSize`. Each piece remembers where it came from, so
+you can show the source of an answer.
+
+```dart
+final pieces = RecursiveCharacterTextSplitter().splitText(text, source: 'policies.md');
+final first = pieces.first;
+print('${first.source}, characters ${first.start}–${first.end}: ${first.text}');
+```
+
+### Make spreadsheets searchable
+
+A row like `SHO-114,Lagos,12` means little on its own. `csvToProse` adds the
+column names, so a question about "staff in Lagos" can find it.
+
+```dart
+print(csvToProse('branch,city,staff\nSHO-114,Lagos,12'));
+// Record 1. branch: SHO-114. city: Lagos. staff: 12.
+```
+
+### Get exact totals from spreadsheets
+
+The search only shows the AI a few rows, so if you ask for a total it adds
+up those few and gets it wrong. `TableQueryPlanner` spots questions about
+totals, averages, counts, highest and lowest, and works them out over every
+row:
+
+```dart
+final sales = CsvTable.parse(csvText, source: 'sales.csv');
+final result = TableQueryPlanner.answer([sales], 'What was total revenue in January 2026?');
+print(result?.toPromptBlock());
+// Total revenue_ngn in January 2026: 71,882,000
+// Computed over 80 matching row(s) out of 240 in sales.csv.
+```
+
+Include that text in your message to the AI, and it will quote the exact
+figure. When the question isn't clearly a calculation, `answer` returns
+`null` and you use the normal search instead.
+
+### Improve questions before searching
+
+Long questions full of extra detail search badly, and follow-ups like "and
+the Abuja one?" mean nothing on their own. `QueryCondenser` asks the chat
+model to rewrite the question into a few search words. If anything goes
+wrong, you get the original question back.
+
+```dart
+final condensed = await QueryCondenser(ollama).condense(
+  model: 'llama3.2',
+  question: 'and the Abuja one?',
+  history: ['Where is the Lagos branch?'],
+);
+print(condensed.text); // Abuja branch location
+```
+
+### Talk to Ollama
+
+`OllamaClient` does the talking: `embed` and `embedOne` turn text into
+numbers for searching, `chat` gets a whole reply, `chatStream` gets a reply
+word by word as it's written, and `listModels` shows what's installed.
+
+```dart
+await for (final piece in ollama.chatStream(model: 'llama3.2', messages: messages)) {
+  stdout.write(piece.content ?? '');
+}
+```
+
+`OllamaLauncher` starts and stops Ollama, for when you want your own
+"Start" and "Stop" buttons. `OllamaClient.connect()` already uses it.
+
+### Store and search pieces
+
+Comparing the question with every piece, as the quick start does, is fine
+for a few hundred pieces. For more, use a search database such as ObjectBox
+or sqlite-vec. `VectorStore` describes what it needs to do, so the rest of
+your code doesn't depend on which one you pick. To get started,
+[`example/memory_vector_store.dart`](example/memory_vector_store.dart) is a
+complete one that keeps everything in memory.
+
+`capPerSource` stops one large file from filling every search result.
+
+## Learn more
+
+The [guide](doc/guide.md) covers every option, how to combine the blocks
+into one `answer()` function, how to choose sizes and models, and what to
+do when answers go wrong.
 
 ## Where it runs
 
-| | macOS | Linux | Windows |
-|---|---|---|---|
-| Splitting, CSV, tables, query condenser | ✅ | ✅ | ✅ |
-| `OllamaClient` and `findSupportedFiles` | ✅ | ✅ | ✅ |
-| `OllamaLauncher` (start / stop) | ✅ | ✅ | ❌ start Ollama yourself |
-
-Web apps aren't supported yet, because parts of the package use features
-only available outside the browser.
-
-Flutter on iOS and Android can't run Ollama on the phone itself. Point
-`OllamaClient(baseUrl: ...)` at a computer on the same network that runs it.
-
-## Troubleshooting
-
-**"No "ollama" binary found."**
-Ollama isn't installed, or it's installed somewhere unusual. Install it from
-[ollama.com](https://ollama.com) or with `brew install ollama`. The launcher
-looks in the usual install folders, because Mac apps don't see your
-terminal's settings.
-
-**"Started … but nothing answered … within 30s."**
-Ollama didn't start properly. Run `ollama serve` in a terminal to see why. A
-common cause is another program already using port 11434.
-
-**"POST /api/embed failed (404)" or "POST /api/chat failed (404)", mentioning "not found".**
-The model isn't downloaded. Run `ollama pull all-minilm` (or whichever model
-you named).
-
-**Answers ignore the documents or make things up.**
-Print the excerpts you send. If the right passage isn't there, the search
-missed it: try a smaller `chunkSize`, use `QueryCondenser`, or raise `k`. If
-it's there but the answer is still wrong, make the system message stricter,
-or try a larger chat model.
-
-**Answers about totals or averages are wrong.**
-Make sure the spreadsheet is passed to `TableQueryPlanner.answer`, and that
-the question names a year ("January **2026**"). If it returns `null`, check
-that the question uses words from the column name.
-
-**Search results all come from one big file.**
-Use `maxPerSource: 2` when searching (or call `capPerSource` yourself).
-
-**"Ollama stopped, then something started it again."**
-It was installed with Homebrew as a background service. Run
-`brew services stop ollama`.
-
-## What it doesn't do (yet)
-
-Knowing the limits saves you debugging time:
-
-- **Ollama only.** There is no built-in support for OpenAI, Gemini or other
-  hosted AIs yet.
-- **Plain-text files only.** PDF, Word and web pages need converting to text
-  first.
-- **No database included.** Bring your own store, or start with the
-  in-memory one above.
-- **The table planner reads English**, and understands a fixed set of
-  words. Unusual phrasing returns `null`, which is safe but means no exact
-  figure. A name that isn't in the spreadsheet (like a branch that doesn't
-  exist) is ignored rather than rejected, so check `result.query.describe()`
-  if a figure looks too large.
-- **No web apps.** It runs in command-line tools, servers and Flutter apps,
-  but not in a browser.
-- **Comma-separated files only.** Files separated by tabs or semicolons
-  aren't read correctly yet.
-
-## Words used in this README
-
-- **RAG**: looking up relevant passages in your documents and giving them to
-  the AI before it answers.
-- **Embedding / meaning fingerprint**: a list of numbers that captures what a
-  piece of text is about. Similar meanings give similar numbers.
-- **Embedding model**: the AI model that makes those fingerprints. Small and
-  fast; it doesn't write text.
-- **Chat model**: the AI model that writes answers.
-- **Passage / chunk**: a short piece cut from a document.
-- **Overlap**: text repeated from the end of one passage at the start of the
-  next.
-- **Vector store / vector database**: a place that stores fingerprints and
-  quickly finds the ones closest to a question.
-- **Thinking model**: a chat model that reasons step by step before
-  answering.
+Command-line tools, servers and Flutter apps on macOS, Linux and Windows.
+On Windows, start Ollama yourself for now; everything else works the same.
+Web apps aren't supported yet.
 
 ## Running the tests
 
@@ -863,13 +235,12 @@ Knowing the limits saves you debugging time:
 dart test
 ```
 
-The tests don't need Ollama. They use stand-ins for it.
+The tests don't need Ollama installed.
 
 ## Contributing
 
 Bug reports and pull requests are welcome on
-[GitHub](https://github.com/Xclusivecyborg/rag_blocks/issues). Please
-include a failing test with any bug fix.
+[GitHub](https://github.com/Xclusivecyborg/rag_blocks/issues).
 
 ## License
 

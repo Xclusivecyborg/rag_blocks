@@ -1,20 +1,15 @@
-// A whole RAG pipeline in one file: split, embed, search, answer.
+// Teaches a local AI a two-paragraph shop handbook, then asks it a question.
+// This is the quick start from the README as one file.
 //
 //   dart run example/main.dart
 //
 // Needs Ollama installed, plus:
 //   ollama pull all-minilm
 //   ollama pull llama3.2
-//
-// The vector store here is a plain list, which is fine for a few hundred
-// chunks. Implement VectorStore over ObjectBox or sqlite-vec for more.
 
 import 'dart:math' as math;
 
 import 'package:rag_blocks/rag_blocks.dart';
-
-const embedModel = 'all-minilm';
-const chatModel = 'llama3.2';
 
 const handbook = '''
 Customers may return unworn footwear within 21 days of purchase for a full
@@ -24,48 +19,54 @@ Full-time employees accrue 20 working days of paid annual leave per year.
 All employees receive a 40% discount on the Everyday line.''';
 
 Future<void> main() async {
-  // 1. Connect, starting `ollama serve` if it is not running.
+  // Step 1: connect to Ollama, starting it if it is not running.
   final ollama = await OllamaClient.connect(onStatus: print);
 
-  // 2. Split the document into chunks.
+  // Step 2: cut the handbook into small pieces.
   final splitter = RecursiveCharacterTextSplitter(
     chunkSize: 200,
     chunkOverlap: 40,
   );
-  final chunks = splitter.splitText(handbook, source: 'handbook.md');
+  final pieces = splitter.splitText(handbook, source: 'handbook.md');
 
-  // 3. Embed every chunk.
-  final vectors = await ollama.embed(
-    model: embedModel,
-    input: [for (final c in chunks) c.text],
+  // Step 3: find the pieces that best match the question.
+  final pieceNumbers = await ollama.embed(
+    model: 'all-minilm',
+    input: [for (final p in pieces) p.text],
   );
-
-  // 4. Embed the question and find the closest chunks.
   const question = 'How long do I have to return Heritage shoes?';
-  final query = await ollama.embedOne(model: embedModel, input: question);
+  final questionNumbers = await ollama.embedOne(
+    model: 'all-minilm',
+    input: question,
+  );
   final ranked = [
-    for (var i = 0; i < chunks.length; i++)
-      (chunk: chunks[i], score: _cosine(query, vectors[i])),
+    for (var i = 0; i < pieces.length; i++)
+      (
+        text: pieces[i].text,
+        score: closeness(questionNumbers, pieceNumbers[i]),
+      ),
   ]..sort((a, b) => b.score.compareTo(a.score));
-  final context = ranked.take(2).map((r) => r.chunk.text).join('\n\n');
+  final bestPieces = ranked.take(2).map((r) => r.text).join('\n\n');
 
-  // 5. Answer from those chunks only.
+  // Step 4: ask the chat model, giving it only those pieces.
   final reply = await ollama.chat(
-    model: chatModel,
+    model: 'llama3.2',
     messages: [
       const ChatMessage(
         'system',
         'Answer using only the excerpts. If they do not say, reply '
             '"I don\'t know."',
       ),
-      ChatMessage('user', 'Excerpts:\n$context\n\nQuestion: $question'),
+      ChatMessage('user', 'Excerpts:\n$bestPieces\n\nQuestion: $question'),
     ],
   );
   print(reply.content);
   ollama.close();
 }
 
-double _cosine(List<double> a, List<double> b) {
+/// How close in meaning two lists of numbers are: near 1 means very similar,
+/// near 0 means unrelated. (This is called cosine similarity.)
+double closeness(List<double> a, List<double> b) {
   var dot = 0.0, na = 0.0, nb = 0.0;
   for (var i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
