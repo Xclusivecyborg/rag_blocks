@@ -4,6 +4,8 @@ description: >-
   splitter, CSV-to-prose, exact table arithmetic, a query condenser, an Ollama
   client and vector-store helpers. No Flutter, no Python, no server.
 version: 0.1.0
+repository: https://github.com/Xclusivecyborg/rag_blocks
+issue_tracker: https://github.com/Xclusivecyborg/rag_blocks/issues
 topics:
   - rag
   - ollama

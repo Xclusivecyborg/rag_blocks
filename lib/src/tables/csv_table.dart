@@ -30,7 +30,7 @@ class CsvTable {
 
   num? number(int row, CsvColumn col) => num.tryParse(cell(row, col));
 
-  DateTime? date(int row, CsvColumn col) => DateTime.tryParse(cell(row, col));
+  DateTime? date(int row, CsvColumn col) => _parseDate(cell(row, col));
 
   /// Distinct non-empty values of a column, in their original casing.
   Set<String> distinctValues(CsvColumn col) => {
@@ -64,15 +64,15 @@ class CsvTable {
         if (value.isEmpty) continue;
         sawValue = true;
         if (num.tryParse(value) == null) allNumbers = false;
-        if (DateTime.tryParse(value) == null) allDates = false;
+        if (_parseDate(value) == null) allDates = false;
         if (!allNumbers && !allDates) break;
       }
       final kind = !sawValue
           ? ColumnKind.text
-          : allDates
-          ? ColumnKind.date
           : allNumbers
           ? ColumnKind.number
+          : allDates
+          ? ColumnKind.date
           : ColumnKind.text;
       columns.add(CsvColumn(header[c].trim(), c, kind));
     }
@@ -92,35 +92,58 @@ class CsvTable {
         if (_matches(r, query)) r,
     ];
     final values = <num>[];
-    final groups = <String, num>{};
+    final groupValues = <String, List<num>>{};
+    int? extremeRow;
+    num? extreme;
     for (final r in matched) {
       final n = isCount ? 1 : number(r, metric!);
       if (n == null) continue;
+      if (extreme == null ||
+          (query.aggregate == Aggregate.min && n < extreme) ||
+          (query.aggregate == Aggregate.max && n > extreme)) {
+        extremeRow = r;
+        extreme = n;
+      }
       values.add(n);
       if (groupColumn != null) {
-        final key = cell(r, groupColumn);
-        groups[key] = (groups[key] ?? 0) + n;
+        (groupValues[cell(r, groupColumn)] ??= []).add(n);
       }
     }
 
-    final num value = values.isEmpty
-        ? 0
-        : switch (query.aggregate) {
-            Aggregate.sum => values.reduce((a, b) => a + b),
-            Aggregate.average => values.reduce((a, b) => a + b) / values.length,
-            Aggregate.min => values.reduce((a, b) => a < b ? a : b),
-            Aggregate.max => values.reduce((a, b) => a > b ? a : b),
-            Aggregate.count => values.length,
-          };
-
+    final isExtreme =
+        query.aggregate == Aggregate.min || query.aggregate == Aggregate.max;
     return QueryResult(
       query: query,
       source: source,
-      value: value,
+      value: _reduce(query.aggregate, values),
       matchedRows: matched.length,
       totalRows: rows.length,
-      groups: groupColumn == null ? null : groups,
+      // Each group gets the same aggregate as the headline figure, so an
+      // average broken down by location lists each location's average.
+      groups: groupColumn == null
+          ? null
+          : {
+              for (final MapEntry(:key, :value) in groupValues.entries)
+                key: _reduce(query.aggregate, value),
+            },
+      extremeRow: isExtreme && extremeRow != null
+          ? {
+              for (final c in columns)
+                if (cell(extremeRow, c).isNotEmpty) c.name: cell(extremeRow, c),
+            }
+          : null,
     );
+  }
+
+  static num _reduce(Aggregate aggregate, List<num> values) {
+    if (values.isEmpty) return 0;
+    return switch (aggregate) {
+      Aggregate.sum => values.reduce((a, b) => a + b),
+      Aggregate.average => values.reduce((a, b) => a + b) / values.length,
+      Aggregate.min => values.reduce((a, b) => a < b ? a : b),
+      Aggregate.max => values.reduce((a, b) => a > b ? a : b),
+      Aggregate.count => values.length,
+    };
   }
 
   bool _matches(int row, TableQuery query) {
@@ -182,6 +205,14 @@ class CsvTable {
     }
   }
 }
+
+/// A date in a cell, or null. Only `YYYY-MM-DD` (optionally followed by a
+/// time) counts: [DateTime.tryParse] alone also accepts `71882000` as the
+/// year 7188, which would turn a column of large amounts into dates.
+DateTime? _parseDate(String value) =>
+    _isoDate.hasMatch(value) ? DateTime.tryParse(value) : null;
+
+final RegExp _isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}');
 
 enum ColumnKind { text, number, date }
 
@@ -259,6 +290,7 @@ class QueryResult {
     required this.matchedRows,
     required this.totalRows,
     this.groups,
+    this.extremeRow,
   });
 
   final TableQuery query;
@@ -266,7 +298,14 @@ class QueryResult {
   final num value;
   final int matchedRows;
   final int totalRows;
+
+  /// The aggregate per value of [TableQuery.groupBy], when it is set.
   final Map<String, num>? groups;
+
+  /// For [Aggregate.min] and [Aggregate.max], the row that holds the value,
+  /// as column name to cell. It answers "which location had the highest
+  /// revenue?". The first such row wins a tie.
+  final Map<String, String>? extremeRow;
 
   bool get isEmpty => matchedRows == 0;
 
@@ -294,6 +333,13 @@ class QueryResult {
         'Computed over $matchedRows matching row(s) '
         'out of $totalRows in $source.',
       );
+    final row = extremeRow;
+    if (row != null) {
+      buffer.writeln(
+        'Found in the row: '
+        '${row.entries.map((e) => '${e.key}=${e.value}').join(', ')}',
+      );
+    }
     final g = groups;
     if (g != null && g.isNotEmpty) {
       buffer.writeln('Breakdown:');

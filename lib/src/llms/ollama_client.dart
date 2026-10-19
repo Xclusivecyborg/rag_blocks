@@ -141,13 +141,17 @@ class OllamaClient {
       ..sort((a, b) => a.name.compareTo(b.name));
   }
 
-  /// Embeds [input] in batches. Returns one vector per input, in order.
+  /// Embeds [input] in batches of [batchSize]. Returns one vector per input,
+  /// in order. Throws [ArgumentError] if [batchSize] is not positive.
   Future<List<List<double>>> embed({
     required String model,
     required List<String> input,
     int batchSize = 16,
     void Function(int done, int total)? onProgress,
   }) async {
+    if (batchSize <= 0) {
+      throw ArgumentError.value(batchSize, 'batchSize', 'must be positive');
+    }
     final vectors = <List<double>>[];
     for (var i = 0; i < input.length; i += batchSize) {
       final batch = input.sublist(i, (i + batchSize).clamp(0, input.length));

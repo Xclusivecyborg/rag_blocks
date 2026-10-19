@@ -109,7 +109,7 @@ final queryVector = await ollama.embedOne(model: 'all-minilm', input: condensed.
 `OllamaClient` covers what a RAG pipeline needs: `embed`, `embedOne`, `chat`
 for the whole reply, `chatStream` for a reply as it is written, `listModels`
 and `version`. `OllamaClient.connect()` starts `ollama serve` for you when
-nothing is answering, and throws an `OllamaException` that says why if Ollama
+nothing is answering and the base URL is on this machine, and throws an `OllamaException` that says why if Ollama
 isn't installed or won't start. `OllamaLauncher` exposes the start and stop
 steps on their own.
 

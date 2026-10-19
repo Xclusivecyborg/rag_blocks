@@ -40,6 +40,19 @@ void main() {
       expect(t.column('b')!.kind, ColumnKind.text);
     });
 
+    test('large whole numbers are numbers, not dates', () {
+      // DateTime.tryParse reads 8 digits like 71882000 as a year and month.
+      final t = CsvTable.parse(
+        'location,revenue\nIkeja,71882000\nLekki,12000000\n',
+        source: 'x.csv',
+      );
+      expect(t.column('revenue')!.kind, ColumnKind.number);
+      final total = t.aggregate(
+        const TableQuery(aggregate: Aggregate.sum, metric: 'revenue'),
+      )!;
+      expect(total.value, 83882000);
+    });
+
     test('handles quoted fields with commas', () {
       final t = CsvTable.parse('name,note\n"Doe, Jane",hi\n', source: 'x.csv');
       expect(t.rows.single.first, 'Doe, Jane');
@@ -132,6 +145,65 @@ void main() {
       expect(grouped.groups, isNotNull);
       final sum = grouped.groups!.values.fold<num>(0, (a, b) => a + b);
       expect(sum, kJanuaryRevenue);
+    });
+  });
+
+  group('breakdowns use the same aggregate as the headline', () {
+    final t = CsvTable.parse(
+      'location,revenue\nIkeja,10\nIkeja,20\nLekki,15\n',
+      source: 'x.csv',
+    );
+    Map<String, num>? groupsFor(Aggregate aggregate) => t
+        .aggregate(
+          TableQuery(
+            aggregate: aggregate,
+            metric: aggregate == Aggregate.count ? null : 'revenue',
+            groupBy: 'location',
+          ),
+        )!
+        .groups;
+
+    test('average', () {
+      expect(groupsFor(Aggregate.average), {'Ikeja': 15, 'Lekki': 15});
+    });
+
+    test('max and min', () {
+      expect(groupsFor(Aggregate.max), {'Ikeja': 20, 'Lekki': 15});
+      expect(groupsFor(Aggregate.min), {'Ikeja': 10, 'Lekki': 15});
+    });
+
+    test('count', () {
+      expect(groupsFor(Aggregate.count), {'Ikeja': 2, 'Lekki': 1});
+    });
+  });
+
+  group('min and max say which row they came from', () {
+    final t = CsvTable.parse(
+      'location,revenue\nIkeja,10\nLekki,30\nYaba,20\n',
+      source: 'x.csv',
+    );
+
+    test('the highest row is reported', () {
+      final result = TableQueryPlanner.answer([
+        t,
+      ], 'Which location had the highest revenue?')!;
+      expect(result.value, 30);
+      expect(result.extremeRow, {'location': 'Lekki', 'revenue': '30'});
+      expect(result.toPromptBlock(), contains('location=Lekki'));
+    });
+
+    test('the lowest row is reported', () {
+      final result = t.aggregate(
+        const TableQuery(aggregate: Aggregate.min, metric: 'revenue'),
+      )!;
+      expect(result.extremeRow!['location'], 'Ikeja');
+    });
+
+    test('other aggregates have no single row', () {
+      final result = t.aggregate(
+        const TableQuery(aggregate: Aggregate.sum, metric: 'revenue'),
+      )!;
+      expect(result.extremeRow, isNull);
     });
   });
 

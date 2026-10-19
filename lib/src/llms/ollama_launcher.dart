@@ -23,7 +23,8 @@ enum LaunchOutcome {
   started, // we ran `ollama serve` and it answered in time
   notInstalled, // no `ollama` binary in any known location
   launchFailed, // the binary exists but would not start
-  timedOut; // started, but never answered on port 11434
+  timedOut, // started, but never answered at the client's base URL
+  unreachable; // nothing answers, and the base URL is not this machine
 
   bool get isUp => this == alreadyRunning || this == started;
 }
@@ -51,7 +52,7 @@ class OllamaLauncher {
     OllamaSpawn? spawn,
     ProcessRunner? run,
   }) : _searchPaths = searchPaths ?? defaultSearchPaths(),
-       _spawn = spawn ?? _startDetached,
+       _spawn = spawn ?? ((exe) => _startDetached(exe, _client.baseUrl)),
        _run = run ?? Process.run;
 
   final OllamaClient _client;
@@ -99,10 +100,15 @@ class OllamaLauncher {
   Future<bool> _isAnswering() async => await _client.version() != null;
 
   /// Makes sure the server is answering, starting it if needed.
+  ///
+  /// A server is only started when the client's base URL is on this machine
+  /// (localhost or a loopback address). For any other host this returns
+  /// [LaunchOutcome.unreachable] instead of starting an unrelated local one.
   Future<LaunchOutcome> ensureRunning({
     void Function(String message)? onStatus,
   }) async {
     if (await _isAnswering()) return LaunchOutcome.alreadyRunning;
+    if (!isLoopback(_client.baseUrl)) return LaunchOutcome.unreachable;
 
     final binary = resolve();
     if (binary == null) return LaunchOutcome.notInstalled;
@@ -215,7 +221,8 @@ class OllamaLauncher {
   String explainStop(StopOutcome outcome) => switch (outcome) {
     StopOutcome.stopped || StopOutcome.notRunning => '',
     StopOutcome.notFound =>
-      'Something is answering on port 11434, but no "ollama serve" process '
+      'Something is answering at ${_client.baseUrl}, but no "ollama serve" '
+          'process '
           'was found to stop. It may be running under another user or in a '
           'container.',
     StopOutcome.failed =>
@@ -242,16 +249,34 @@ class OllamaLauncher {
         'Found $resolvedPath but it would not '
             'start.\nRun "ollama serve" in a terminal, then try again.$detail',
       LaunchOutcome.timedOut =>
-        'Started $resolvedPath but nothing answered on port 11434 within '
+        'Started $resolvedPath but nothing answered at ${_client.baseUrl} '
+            'within '
             '${startupTimeout.inSeconds}s.\n'
             'Run "ollama serve" in a terminal to see what it says.',
+      LaunchOutcome.unreachable =>
+        'Nothing answered at ${_client.baseUrl}. It is not on this machine, '
+            'so it was not started here. Check that Ollama is running there '
+            'and listening on that address.',
     };
   }
 
-  static Future<int?> _startDetached(String executable) async {
-    final process = await Process.start(executable, const [
-      'serve',
-    ], mode: ProcessStartMode.detached);
+  /// Whether [url] points at this machine.
+  static bool isLoopback(Uri url) =>
+      url.host == 'localhost' ||
+      (InternetAddress.tryParse(url.host)?.isLoopback ?? false);
+
+  /// Starts `ollama serve` listening on [baseUrl]'s host and port, which
+  /// `ollama serve` reads from `OLLAMA_HOST`.
+  static Future<int?> _startDetached(String executable, Uri baseUrl) async {
+    final host = baseUrl.host.contains(':')
+        ? '[${baseUrl.host}]'
+        : baseUrl.host;
+    final process = await Process.start(
+      executable,
+      const ['serve'],
+      mode: ProcessStartMode.detached,
+      environment: {'OLLAMA_HOST': '$host:${baseUrl.port}'},
+    );
     return process.pid;
   }
 }

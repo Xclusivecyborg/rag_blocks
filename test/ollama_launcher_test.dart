@@ -135,7 +135,7 @@ void main() {
     expect(outcome.isUp, isFalse);
     // It waited rather than giving up on the first failed poll.
     expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(500));
-    expect(l.explainLaunch(outcome), contains('port 11434'));
+    expect(l.explainLaunch(outcome), contains('http://127.0.0.1:11434'));
   });
 
   test('explain() is silent only when we are actually up', () {
@@ -318,5 +318,69 @@ void main() {
     expect(paths, contains('/opt/homebrew/bin/ollama'));
     // A GUI app gets a minimal PATH, so these must be explicit, not searched.
     expect(paths.every((p) => p.startsWith('/')), isTrue);
+  });
+
+  group('base URL', () {
+    OllamaLauncher launcherAt(String url, {required void Function() onSpawn}) =>
+        OllamaLauncher(
+          OllamaClient(
+            baseUrl: Uri.parse(url),
+            client: MockClient((_) async => http.Response('down', 500)),
+          ),
+          searchPaths: [Platform.resolvedExecutable],
+          spawn: (_) async {
+            onSpawn();
+            return 4242;
+          },
+          startupTimeout: const Duration(milliseconds: 100),
+          pollInterval: const Duration(milliseconds: 20),
+        );
+
+    test('a remote server that is down is not started locally', () async {
+      var spawned = false;
+      final l = launcherAt(
+        'http://gpu-box.lan:11434',
+        onSpawn: () => spawned = true,
+      );
+
+      final outcome = await l.ensureRunning();
+
+      expect(outcome, LaunchOutcome.unreachable);
+      expect(outcome.isUp, isFalse);
+      expect(spawned, isFalse);
+      expect(l.explainLaunch(outcome), contains('gpu-box.lan'));
+    });
+
+    test('localhost and loopback addresses are started', () async {
+      for (final url in [
+        'http://localhost:11500',
+        'http://127.0.0.1:11500',
+        'http://[::1]:11500',
+      ]) {
+        var spawned = false;
+        final l = launcherAt(url, onSpawn: () => spawned = true);
+        expect(await l.ensureRunning(), LaunchOutcome.timedOut, reason: url);
+        expect(spawned, isTrue, reason: url);
+      }
+    });
+
+    test('messages name the configured address, not the default port', () {
+      final l = launcherAt('http://127.0.0.1:11500', onSpawn: () {});
+      expect(l.explainLaunch(LaunchOutcome.timedOut), contains(':11500'));
+      expect(l.explainStop(StopOutcome.notFound), contains(':11500'));
+    });
+
+    test('connect() to a remote server that is down throws', () async {
+      await expectLater(
+        OllamaClient.connect(baseUrl: Uri.parse('http://192.0.2.1:9')),
+        throwsA(
+          isA<OllamaException>().having(
+            (e) => e.message,
+            'message',
+            contains('not on this machine'),
+          ),
+        ),
+      );
+    });
   });
 }
