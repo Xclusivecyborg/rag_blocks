@@ -21,6 +21,7 @@ export 'src/llms/ollama_client.dart';
 export 'src/llms/ollama_launcher.dart';
 export 'src/query_transformers/query_condenser.dart';
 export 'src/retrievers/cap_per_source.dart';
+export 'src/retrievers/similarity_ranker.dart';
 export 'src/tables/csv_table.dart';
 export 'src/tables/table_query_planner.dart';
 export 'src/text_splitters/recursive_character_text_splitter.dart';
