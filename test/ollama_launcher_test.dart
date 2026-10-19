@@ -30,6 +30,7 @@ void main() {
     // A path that always exists, so "found the binary" is not the variable
     // under test — Platform.resolvedExecutable is the running dart binary.
     searchPaths: searchPaths ?? <String>[Platform.resolvedExecutable],
+    isWindows: false,
     spawn: spawn ?? (_) async => 4242,
     startupTimeout: const Duration(milliseconds: 600),
     pollInterval: const Duration(milliseconds: 50),
@@ -163,6 +164,7 @@ void main() {
       final l = OllamaLauncher(
         clientThatIsUp(() => serving),
         searchPaths: <String>[Platform.resolvedExecutable],
+        isWindows: false,
         spawn: (_) async => 4242,
         run: (exe, args) async {
           commands.add(<String>[exe, ...args]);
@@ -236,6 +238,7 @@ void main() {
       final l = OllamaLauncher(
         clientThatIsUp(() => true),
         searchPaths: <String>[Platform.resolvedExecutable],
+        isWindows: false,
         spawn: (_) async => 4242,
         run: (exe, args) async {
           commands.add(<String>[exe, ...args]);
@@ -291,6 +294,7 @@ void main() {
       final l = OllamaLauncher(
         clientThatIsUp(() => true), // never stops answering
         searchPaths: <String>[Platform.resolvedExecutable],
+        isWindows: false,
         spawn: (_) async => 4242,
         run: (_, _) async => ProcessResult(0, 0, '9001', ''),
         shutdownTimeout: const Duration(milliseconds: 200),
