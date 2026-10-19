@@ -412,45 +412,73 @@ Things to know:
   programs. To use the launcher in a Mac app, set
   `com.apple.security.app-sandbox` to `false` in its entitlements file.
 
-### Storing and searching passages: `VectorStore` and `capPerSource`
+### Finding the best passages: `SimilarityRanker`
 
-Comparing a question with every passage one by one, as the README's quick
-start does,
-is fine for a few hundred passages. For more, you'll want a proper search
-index (a "vector database") such as ObjectBox or sqlite-vec.
-
-This package doesn't include one. Instead it describes what a store must be
-able to do (`VectorStore`), so the rest of your code doesn't care which one
-you pick. A complete in-memory store you can start with, and swap out later, is in
-[`example/memory_vector_store.dart`](../example/memory_vector_store.dart).
-
-Using it:
+The ranker does the searching for you. Give it your passages once, then ask
+it for the best matches to each question:
 
 ```dart
-final store = MemoryVectorStore('all-minilm');
-store.addAll(passages, await ollama.embed(model: store.embeddingModel, input: [
-  for (final p in passages) p.text,
-]));
+final ranker = SimilarityRanker(ollama, model: 'all-minilm');
 
-final hits = store.search(
-  await ollama.embedOne(model: store.embeddingModel, input: 'returns window'),
-  k: 4,
+// Once, when your documents load. Shows progress for a progress bar.
+await ranker.addAll(passages, onProgress: (done, total) => print('$done/$total'));
+
+// For each question.
+final best = await ranker.rank(
+  'How long is the returns window?',
+  top: 4,
   maxPerSource: 2,
+  minScore: 0.3,
 );
-for (final hit in hits) {
-  print('${hit.score.toStringAsFixed(2)}  ${hit.chunk.source}: ${hit.chunk.text}');
+for (final match in best) {
+  print('${match.score.toStringAsFixed(2)}  ${match.chunk.source}: ${match.chunk.text}');
 }
+```
+
+What each setting means:
+
+| Setting | What it does | Good starting value |
+|---|---|---|
+| `model` | The search model. Use the same one for as long as you keep the passages. | `all-minilm` |
+| `top` | The most passages to return. | 3–6 |
+| `maxPerSource` | The most passages to take from any one file. | 2 |
+| `minScore` | Leave out passages that are only loosely related. The score runs from 0 (unrelated) to 1 (same meaning). If nothing scores high enough you get an empty list, which is a good cue to answer "I don't know". | about 0.3 with `all-minilm`; leave it out at first |
+
+Why `maxPerSource` matters: a 240-row spreadsheet can produce dozens of
+passages that all look a bit like a sales question, and fill the top 5
+results by themselves. The policy document that actually answers the
+question never gets shown. With `maxPerSource: 2`, other files get a turn.
+
+Each `addAll` asks Ollama to describe the new passages, which takes a moment
+for large folders, so call it once rather than for every question. You can
+call it again later to add more passages.
+
+### Keeping passages in a database: `VectorStore`
+
+By default the ranker keeps passages in memory (`InMemoryVectorStore`).
+That's quick for a few thousand passages, but they're gone when the app
+closes, and have to be described again on the next start.
+
+To keep them, store them in a search database such as ObjectBox or
+sqlite-vec. Write a class that implements `VectorStore` (adding passages and
+finding the closest ones), and hand it to the ranker:
+
+```dart
+final ranker = SimilarityRanker(
+  ollama,
+  model: 'all-minilm',
+  store: myDatabaseStore, // implements VectorStore
+);
 ```
 
 Always search with **the same model** you used to fill the store. Each model
 makes its own kind of fingerprint, and fingerprints from different models
-can't be compared. That's why the store remembers `embeddingModel`.
+can't be compared. That's why a store remembers its `embeddingModel`, and
+the ranker refuses a store filled by a different model.
 
-**`capPerSource` stops one file from taking every slot.** A 240-row
-spreadsheet can produce dozens of passages that all look a bit like a sales
-question, and fill the top 5 results by themselves. The policy document
-that actually answers the question never gets shown. `capPerSource(hits, 5,
-2)` keeps the best 5 overall but takes at most 2 from any one file.
+If you'd rather compare things yourself, `cosineSimilarity(a, b)` scores two
+fingerprints, and `capPerSource(hits, 5, 2)` applies the per-file limit to
+any sorted list of results.
 
 ## Putting it all together
 
@@ -461,7 +489,7 @@ falls back to searching:
 Future<String> answer(
   String question, {
   required OllamaClient ollama,
-  required VectorStore store,
+  required SimilarityRanker ranker,
   required List<CsvTable> tables,
   List<String> history = const [],
 }) async {
@@ -474,11 +502,7 @@ Future<String> answer(
     question: question,
     history: history,
   );
-  final hits = store.search(
-    await ollama.embedOne(model: store.embeddingModel, input: condensed.text),
-    k: 5,
-    maxPerSource: 2,
-  );
+  final hits = await ranker.rank(condensed.text, top: 5, maxPerSource: 2);
   final excerpts = [
     for (final hit in hits) '[${hit.chunk.source}]\n${hit.chunk.text}',
   ].join('\n\n');
@@ -522,6 +546,9 @@ for (final file in await findSupportedFiles(Directory('knowledge_base'))) {
   }
   passages.addAll(splitter.splitText(text, source: name));
 }
+
+final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+await ranker.addAll(passages);
 ```
 
 ## Choosing settings
@@ -540,7 +567,7 @@ from 6 in 12 to 10 in 12.
 **Overlap (`chunkOverlap`).** The default is 200 characters. It must be
 smaller than the passage size. Use about a third of the passage size.
 
-**How many passages to send (`k`).** 3 to 6 is usually right. Too few and the
+**How many passages to send (`top`).** 3 to 6 is usually right. Too few and the
 answer may be missing; too many and small models lose focus.
 
 **Models.**
@@ -551,7 +578,7 @@ answer may be missing; too many and small models lose focus.
 | Answering (chat) | `llama3.2` | `qwen3`, `gpt-oss` |
 
 If you change the embedding model, index your documents again (see
-[Storing and searching passages](#storing-and-searching-passages-vectorstore-and-cappersource)).
+[Keeping passages in a database](#keeping-passages-in-a-database-vectorstore)).
 
 ## Where it runs
 
@@ -585,7 +612,7 @@ you named).
 
 **Answers ignore the documents or make things up.**
 Print the excerpts you send. If the right passage isn't there, the search
-missed it: try a smaller `chunkSize`, use `QueryCondenser`, or raise `k`. If
+missed it: try a smaller `chunkSize`, use `QueryCondenser`, or raise `top`. If
 it's there but the answer is still wrong, make the system message stricter,
 or try a larger chat model.
 
@@ -595,7 +622,7 @@ the question names a year ("January **2026**"). If it returns `null`, check
 that the question uses words from the column name.
 
 **Search results all come from one big file.**
-Use `maxPerSource: 2` when searching (or call `capPerSource` yourself).
+Pass `maxPerSource: 2` to `ranker.rank` (or call `capPerSource` yourself).
 
 **"Ollama stopped, then something started it again."**
 It was installed with Homebrew as a background service. Run
@@ -609,9 +636,9 @@ Knowing the limits saves you debugging time:
   hosted AIs yet.
 - **Plain-text files only.** PDF, Word and web pages need converting to text
   first.
-- **No database included.** Bring your own store, or start with the
-  in-memory one in
-  [`example/memory_vector_store.dart`](../example/memory_vector_store.dart).
+- **No database included.** The built-in store keeps passages in memory
+  only. To keep them between runs, plug in your own database (see
+  [Keeping passages in a database](#keeping-passages-in-a-database-vectorstore)).
 - **The table planner reads English**, and understands a fixed set of
   words. Unusual phrasing returns `null`, which is safe but means no exact
   figure. A name that isn't in the spreadsheet (like a branch that doesn't
