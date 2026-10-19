@@ -435,6 +435,10 @@ for (final match in best) {
 }
 ```
 
+`rank` gives you each match with its score and where it came from. When you
+only need the text to hand to the chat model, `best.bestPieces` joins it
+into one block, best first, with a blank line between pieces.
+
 What each setting means:
 
 | Setting | What it does | Good starting value |
