@@ -93,15 +93,25 @@ class CsvTable {
     ];
     final values = <num>[];
     final groupValues = <String, List<num>>{};
+    int? extremeRow;
+    num? extreme;
     for (final r in matched) {
       final n = isCount ? 1 : number(r, metric!);
       if (n == null) continue;
+      if (extreme == null ||
+          (query.aggregate == Aggregate.min && n < extreme) ||
+          (query.aggregate == Aggregate.max && n > extreme)) {
+        extremeRow = r;
+        extreme = n;
+      }
       values.add(n);
       if (groupColumn != null) {
         (groupValues[cell(r, groupColumn)] ??= []).add(n);
       }
     }
 
+    final isExtreme =
+        query.aggregate == Aggregate.min || query.aggregate == Aggregate.max;
     return QueryResult(
       query: query,
       source: source,
@@ -116,6 +126,12 @@ class CsvTable {
               for (final MapEntry(:key, :value) in groupValues.entries)
                 key: _reduce(query.aggregate, value),
             },
+      extremeRow: isExtreme && extremeRow != null
+          ? {
+              for (final c in columns)
+                if (cell(extremeRow, c).isNotEmpty) c.name: cell(extremeRow, c),
+            }
+          : null,
     );
   }
 
@@ -274,6 +290,7 @@ class QueryResult {
     required this.matchedRows,
     required this.totalRows,
     this.groups,
+    this.extremeRow,
   });
 
   final TableQuery query;
@@ -281,8 +298,14 @@ class QueryResult {
   final num value;
   final int matchedRows;
   final int totalRows;
+
   /// The aggregate per value of [TableQuery.groupBy], when it is set.
   final Map<String, num>? groups;
+
+  /// For [Aggregate.min] and [Aggregate.max], the row that holds the value,
+  /// as column name to cell. It answers "which location had the highest
+  /// revenue?". The first such row wins a tie.
+  final Map<String, String>? extremeRow;
 
   bool get isEmpty => matchedRows == 0;
 
@@ -310,6 +333,13 @@ class QueryResult {
         'Computed over $matchedRows matching row(s) '
         'out of $totalRows in $source.',
       );
+    final row = extremeRow;
+    if (row != null) {
+      buffer.writeln(
+        'Found in the row: '
+        '${row.entries.map((e) => '${e.key}=${e.value}').join(', ')}',
+      );
+    }
     final g = groups;
     if (g != null && g.isNotEmpty) {
       buffer.writeln('Breakdown:');

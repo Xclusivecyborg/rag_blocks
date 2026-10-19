@@ -177,6 +177,36 @@ void main() {
     });
   });
 
+  group('min and max say which row they came from', () {
+    final t = CsvTable.parse(
+      'location,revenue\nIkeja,10\nLekki,30\nYaba,20\n',
+      source: 'x.csv',
+    );
+
+    test('the highest row is reported', () {
+      final result = TableQueryPlanner.answer([
+        t,
+      ], 'Which location had the highest revenue?')!;
+      expect(result.value, 30);
+      expect(result.extremeRow, {'location': 'Lekki', 'revenue': '30'});
+      expect(result.toPromptBlock(), contains('location=Lekki'));
+    });
+
+    test('the lowest row is reported', () {
+      final result = t.aggregate(
+        const TableQuery(aggregate: Aggregate.min, metric: 'revenue'),
+      )!;
+      expect(result.extremeRow!['location'], 'Ikeja');
+    });
+
+    test('other aggregates have no single row', () {
+      final result = t.aggregate(
+        const TableQuery(aggregate: Aggregate.sum, metric: 'revenue'),
+      )!;
+      expect(result.extremeRow, isNull);
+    });
+  });
+
   group('the planner declines when it should', () {
     test('prose questions are not aggregations', () {
       for (final q in [
