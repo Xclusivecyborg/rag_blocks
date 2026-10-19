@@ -23,7 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dart-lang/setup-dart@v1
         with:
@@ -42,7 +42,10 @@ jobs:
         run: dart test
 
       # pub.dev's own scoring. Fails if any of the 160 points is lost.
+      # Skipped on Windows: pana's sandbox rejects Windows paths ("must not
+      # contain ':'"), and pub.dev scores packages on Linux anyway.
       - name: Score with pana
+        if: runner.os != 'Windows'
         run: |
           dart pub global activate pana
           dart pub global run pana --no-warning --exit-code-threshold 0 .
