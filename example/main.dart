@@ -7,8 +7,6 @@
 //   ollama pull all-minilm
 //   ollama pull llama3.2
 
-import 'dart:math' as math;
-
 import 'package:rag_blocks/rag_blocks.dart';
 
 const handbook = '''
@@ -30,23 +28,11 @@ Future<void> main() async {
   final pieces = splitter.splitText(handbook, source: 'handbook.md');
 
   // Step 3: find the pieces that best match the question.
-  final pieceNumbers = await ollama.embed(
-    model: 'all-minilm',
-    input: [for (final p in pieces) p.text],
-  );
+  final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+  await ranker.addAll(pieces);
   const question = 'How long do I have to return Heritage shoes?';
-  final questionNumbers = await ollama.embedOne(
-    model: 'all-minilm',
-    input: question,
-  );
-  final ranked = [
-    for (var i = 0; i < pieces.length; i++)
-      (
-        text: pieces[i].text,
-        score: closeness(questionNumbers, pieceNumbers[i]),
-      ),
-  ]..sort((a, b) => b.score.compareTo(a.score));
-  final bestPieces = ranked.take(2).map((r) => r.text).join('\n\n');
+  final best = await ranker.rank(question, top: 2);
+  final bestPieces = best.map((match) => match.chunk.text).join('\n\n');
 
   // Step 4: ask the chat model, giving it only those pieces.
   final reply = await ollama.chat(
@@ -62,16 +48,4 @@ Future<void> main() async {
   );
   print(reply.content);
   ollama.close();
-}
-
-/// How close in meaning two lists of numbers are: near 1 means very similar,
-/// near 0 means unrelated. (This is called cosine similarity.)
-double closeness(List<double> a, List<double> b) {
-  var dot = 0.0, na = 0.0, nb = 0.0;
-  for (var i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return dot / (math.sqrt(na) * math.sqrt(nb));
 }

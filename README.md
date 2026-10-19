@@ -66,31 +66,24 @@ next, so a sentence that falls on the cut isn't lost.
 **Step 3: Find the pieces that best match the question.**
 
 ```dart
-// Describe every piece as a list of numbers.
-final pieceNumbers = await ollama.embed(
-  model: 'all-minilm',
-  input: [for (final p in pieces) p.text],
-);
+final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+await ranker.addAll(pieces);
 
-// Describe the question the same way.
 const question = 'How long do I have to return Heritage shoes?';
-final questionNumbers = await ollama.embedOne(model: 'all-minilm', input: question);
-
-// Keep the two pieces whose numbers are closest to the question's.
-final ranked = [
-  for (var i = 0; i < pieces.length; i++)
-    (text: pieces[i].text, score: closeness(questionNumbers, pieceNumbers[i])),
-]..sort((a, b) => b.score.compareTo(a.score));
-final bestPieces = ranked.take(2).map((r) => r.text).join('\n\n');
+final best = await ranker.rank(question, top: 2);
+final bestPieces = best.map((match) => match.chunk.text).join('\n\n');
 ```
 
-This is how the search works. The `all-minilm` model reads a piece of text
-and turns it into a list of numbers that describes its *meaning*. Texts
-about the same topic get similar numbers, even when they use different
-words. So we turn every piece and the question into numbers, and pick the
-pieces whose numbers are closest. `closeness` is a small helper, shown in
-the [full program](example/main.dart), that scores two lists from 0
-(unrelated) to 1 (same meaning).
+The ranker is the search. When you add pieces, it uses the `all-minilm`
+model to describe the *meaning* of each one, so pieces about the same topic
+are recognised as similar even when they use different words. `rank` then
+compares the question with every piece and returns the closest ones, best
+first. `top: 2` asks for the best two.
+
+You can also limit how many pieces come from one file (`maxPerSource`) and
+leave out loosely related ones (`minScore`). The
+[guide](doc/guide.md#finding-the-best-passages-similarityranker) explains
+both.
 
 **Step 4: Ask the chat model, giving it only those pieces.**
 
@@ -123,7 +116,8 @@ with `dart run example/main.dart`.
 | [`CsvTable`, `TableQueryPlanner`](#get-exact-totals-from-spreadsheets) | Works out totals and averages over every row, instead of letting the AI guess. |
 | [`QueryCondenser`](#improve-questions-before-searching) | Shortens long questions and completes follow-ups before searching. |
 | [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, and starts or stops it. |
-| [`VectorStore`, `capPerSource`](#store-and-search-pieces) | Plugs in your own search database. |
+| [`SimilarityRanker`](#find-the-best-pieces) | Finds the pieces closest in meaning to a question. |
+| [`VectorStore`, `InMemoryVectorStore`](#keep-pieces-in-a-database) | Where the ranker keeps pieces: in memory, or in your own database. |
 
 ### Load a folder
 
@@ -193,9 +187,10 @@ print(condensed.text); // Abuja branch location
 
 ### Talk to Ollama
 
-`OllamaClient` does the talking: `embed` and `embedOne` turn text into
-numbers for searching, `chat` gets a whole reply, `chatStream` gets a reply
-word by word as it's written, and `listModels` shows what's installed.
+`OllamaClient` does the talking: `chat` gets a whole reply, `chatStream`
+gets a reply word by word as it's written, `listModels` shows what's
+installed, and `embed` describes text as numbers for searching (the ranker
+uses it for you).
 
 ```dart
 await for (final piece in ollama.chatStream(model: 'llama3.2', messages: messages)) {
@@ -206,16 +201,27 @@ await for (final piece in ollama.chatStream(model: 'llama3.2', messages: message
 `OllamaLauncher` starts and stops Ollama, for when you want your own
 "Start" and "Stop" buttons. `OllamaClient.connect()` already uses it.
 
-### Store and search pieces
+### Find the best pieces
 
-Comparing the question with every piece, as the quick start does, is fine
-for a few hundred pieces. For more, use a search database such as ObjectBox
-or sqlite-vec. `VectorStore` describes what it needs to do, so the rest of
-your code doesn't depend on which one you pick. To get started,
-[`example/memory_vector_store.dart`](example/memory_vector_store.dart) is a
-complete one that keeps everything in memory.
+Give the ranker your pieces once, then ask it for the best matches to each
+question, as in the quick start. Optional settings:
 
-`capPerSource` stops one large file from filling every search result.
+```dart
+final best = await ranker.rank(
+  question,
+  top: 5,          // at most 5 pieces
+  maxPerSource: 2, // at most 2 from any one file
+  minScore: 0.3,   // skip pieces that are only loosely related
+);
+```
+
+### Keep pieces in a database
+
+The ranker keeps pieces in memory by default, so they're gone when your app
+closes. To keep them, write a small class that implements `VectorStore`
+over a database such as ObjectBox or sqlite-vec, and pass it to the ranker
+with `store:`. See the
+[guide](doc/guide.md#keeping-passages-in-a-database-vectorstore).
 
 ## Learn more
 
