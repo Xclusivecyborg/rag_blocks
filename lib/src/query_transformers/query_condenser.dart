@@ -28,16 +28,25 @@ class CondensedQuery {
 /// An embedding represents the whole sentence, so extra clauses pull it
 /// off-topic. On the test knowledge base, "employee discount" finds the
 /// staff handbook at rank 1, but a long question about buying shoes as an
-/// employee ranks it 10th. Condensing also turns follow-ups like "and the Abuja one?" into a
-/// real query using the conversation so far.
+/// employee ranks it 10th. Condensing also turns follow-ups like "and for
+/// contractors?" into a real query using the conversation so far.
 ///
 /// Every failure falls back to the original question: a bad rewrite is worse
 /// than none.
 class QueryCondenser {
-  QueryCondenser(this._ollama, {this.timeout = const Duration(seconds: 25)});
+  QueryCondenser(
+    this._ollama, {
+    this.timeout = const Duration(seconds: 25),
+    this.systemPrompt = defaultSystemPrompt,
+  });
 
   final OllamaClient _ollama;
   final Duration timeout;
+
+  /// The instructions given to the chat model. Replace it to add examples
+  /// from your own documents, which helps a small model most. Keep asking for
+  /// the query alone on one line: anything else is rejected.
+  final String systemPrompt;
 
   /// Shorter questions are already close to a search query.
   static const int minWordsToCondense = 8;
@@ -45,7 +54,8 @@ class QueryCondenser {
   /// A longer rewrite is the model explaining itself, not a query.
   static const int maxWords = 12;
 
-  static const String _system = '''
+  /// The default [systemPrompt]. Its examples are deliberately generic.
+  static const String defaultSystemPrompt = '''
 You rewrite questions into short search queries for a document search engine.
 
 Rules:
@@ -56,12 +66,14 @@ Rules:
 - Maximum 8 words.
 
 Examples:
-Q: How much will I get as discount if I buy shoes worth 100,000 naira as an employee?
-employee discount policy
-Q: and the Abuja one?
-Abuja branch location
-Q: Can you tell me please what the returns window is for the Heritage line?
-Heritage line returns window''';
+Q: How many days of annual leave would I have left if I took 6 days off in March?
+annual leave allowance
+Conversation so far:
+What is the annual leave policy?
+Q: and for contractors?
+contractor annual leave policy
+Q: Could you please tell me what the warranty covers for the X200 laptop?
+X200 laptop warranty coverage''';
 
   /// Returns the query to embed. Never throws.
   Future<CondensedQuery> condense({
@@ -79,7 +91,7 @@ Heritage line returns window''';
     }
 
     final messages = [
-      const ChatMessage('system', _system),
+      ChatMessage('system', systemPrompt),
       ChatMessage(
         'user',
         history.isEmpty

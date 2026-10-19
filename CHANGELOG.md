@@ -6,9 +6,12 @@ First release, extracted from the local_rag demo app.
   character offsets for every chunk.
 - `csvToProse`, which rewrites CSV rows as labelled sentences that embed well.
 - `CsvTable` and `TableQueryPlanner`, for computing totals, averages, counts
-  and breakdowns over every row instead of retrieving a few.
+  and breakdowns over every row instead of retrieving a few. The planner
+  takes custom `synonyms`, and declines questions that name something the
+  table doesn't have.
 - `QueryCondenser`, which rewrites long questions and follow-ups into short
   search queries, and falls back to the original question on any failure.
+  Its `systemPrompt` can be replaced with examples from your own documents.
 - `OllamaClient` with `chat`, `chatStream`, `embed` and `connect`, and
   `OllamaLauncher` to start and stop `ollama serve` on macOS and Linux.
 - `SimilarityRanker`, which finds the chunks closest in meaning to a
