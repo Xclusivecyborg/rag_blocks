@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../llms/chat_model.dart';
 import '../llms/ollama_client.dart';
 
 /// The result of trying to shorten a question before embedding it.
