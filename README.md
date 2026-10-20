@@ -66,7 +66,7 @@ next, so a sentence that falls on the cut isn't lost.
 **Step 3: Find the pieces that best match the question.**
 
 ```dart
-final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
 await ranker.addAll(pieces);
 
 const question = 'How long do I have to return Heritage shoes?';
@@ -177,8 +177,7 @@ model to rewrite the question into a few search words. If anything goes
 wrong, you get the original question back.
 
 ```dart
-final condensed = await QueryCondenser(ollama).condense(
-  model: 'llama3.2',
+final condensed = await QueryCondenser(ollama.chatModel('llama3.2')).condense(
   question: 'and the Abuja one?',
   history: ['Where is the Lagos branch?'],
 );
@@ -232,7 +231,16 @@ do when answers go wrong.
 ## Where it runs
 
 Command-line tools, servers and Flutter apps on macOS, Linux and Windows,
-including starting and stopping Ollama. Web apps aren't supported yet.
+including starting and stopping Ollama.
+
+Flutter apps on **iOS and Android** work too, but Ollama can't run on a
+phone. Either connect to Ollama on another computer, or use a model that
+runs on the phone itself: the ranker and condenser accept any model you wrap
+in a small `Embedder` or `ChatModel` class. The
+[guide](doc/guide.md#using-a-model-that-isnt-ollama-embedder-and-chatmodel)
+shows how.
+
+Web apps aren't supported yet.
 
 ## Running the tests
 
