@@ -28,7 +28,7 @@ Future<void> main() async {
   final pieces = splitter.splitText(handbook, source: 'handbook.md');
 
   // Step 3: find the pieces that best match the question.
-  final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+  final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
   await ranker.addAll(pieces);
   const question = 'How long do I have to return Heritage shoes?';
   final bestPieces = (await ranker.rank(question, top: 2)).bestPieces;

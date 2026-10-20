@@ -1,4 +1,4 @@
-import '../llms/ollama_client.dart';
+import '../llms/embedder.dart';
 import '../text_splitters/recursive_character_text_splitter.dart';
 import '../vector_stores/in_memory_vector_store.dart';
 import '../vector_stores/vector_store.dart';
@@ -6,11 +6,11 @@ import '../vector_stores/vector_store.dart';
 /// Finds the chunks whose meaning is closest to a question.
 ///
 /// Add your chunks once with [addAll], then call [rank] for each question.
-/// It embeds the chunks and the question with [model] and compares them, so
-/// you don't have to handle the embeddings yourself.
+/// It embeds the chunks and the question with [embedder] and compares them,
+/// so you don't have to handle the embeddings yourself.
 ///
 /// ```dart
-/// final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+/// final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
 /// await ranker.addAll(chunks);
 /// final best = await ranker.rank('How long is the returns window?', top: 3);
 /// for (final match in best) {
@@ -18,35 +18,29 @@ import '../vector_stores/vector_store.dart';
 /// }
 /// ```
 ///
+/// Any [Embedder] works, so the model can also run on the device itself,
+/// as phones need.
+///
 /// Chunks are kept in an [InMemoryVectorStore] unless you pass a [store] of
 /// your own, such as one backed by a database.
 class SimilarityRanker {
-  /// Throws [ArgumentError] if [store] was filled by a model other than
-  /// [model], because their embeddings cannot be compared.
-  SimilarityRanker(
-    this._ollama, {
-    required this.model,
-    VectorStore? store,
-    this.batchSize = 16,
-  }) : store = store ?? InMemoryVectorStore(model) {
-    if (this.store.embeddingModel != model) {
+  /// Throws [ArgumentError] if [store] was filled by a model other than the
+  /// embedder's, because their embeddings cannot be compared.
+  SimilarityRanker(this.embedder, {VectorStore? store})
+    : store = store ?? InMemoryVectorStore(embedder.model) {
+    if (this.store.embeddingModel != embedder.model) {
       throw ArgumentError(
         'The store holds embeddings from ${this.store.embeddingModel}, '
-        'but this ranker uses $model.',
+        'but this ranker uses ${embedder.model}.',
       );
     }
   }
 
-  final OllamaClient _ollama;
-
-  /// The embedding model used for chunks and questions alike.
-  final String model;
+  /// Embeds chunks and questions alike.
+  final Embedder embedder;
 
   /// Where the embedded chunks are kept.
   final VectorStore store;
-
-  /// How many chunks to embed per request to Ollama.
-  final int batchSize;
 
   /// Embeds [chunks] and adds them to [store]. Call it again to add more.
   ///
@@ -56,12 +50,9 @@ class SimilarityRanker {
     void Function(int done, int total)? onProgress,
   }) async {
     if (chunks.isEmpty) return;
-    final embeddings = await _ollama.embed(
-      model: model,
-      input: [for (final c in chunks) c.text],
-      batchSize: batchSize,
-      onProgress: onProgress,
-    );
+    final embeddings = await embedder.embed([
+      for (final c in chunks) c.text,
+    ], onProgress: onProgress);
     store.addAll(chunks, embeddings);
   }
 
@@ -88,7 +79,7 @@ class SimilarityRanker {
       throw ArgumentError.value(top, 'top', 'must be positive');
     }
     if (store.isEmpty) return const [];
-    final query = await _ollama.embedOne(model: model, input: question);
+    final query = (await embedder.embed([question])).single;
     final hits = store.search(query, k: top, maxPerSource: maxPerSource);
     return [
       for (final hit in hits)

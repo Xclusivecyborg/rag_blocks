@@ -55,7 +55,7 @@ void main() {
 
   setUp(() async {
     modelsAsked = [];
-    ranker = SimilarityRanker(fakeOllama(modelsAsked), model: 'all-minilm');
+    ranker = SimilarityRanker(fakeOllama(modelsAsked).embedder('all-minilm'));
     await ranker.addAll(chunks);
   });
 
@@ -86,7 +86,7 @@ void main() {
   });
 
   test('nothing added means nothing found, without calling Ollama', () async {
-    final empty = SimilarityRanker(fakeOllama(modelsAsked), model: 'm');
+    final empty = SimilarityRanker(fakeOllama(modelsAsked).embedder('m'));
     modelsAsked.clear();
     expect(await empty.rank('anything'), isEmpty);
     expect(modelsAsked, isEmpty);
@@ -94,7 +94,7 @@ void main() {
 
   test('chunks can be added in several goes, with progress', () async {
     final progress = <int>[];
-    final r = SimilarityRanker(fakeOllama([]), model: 'm', batchSize: 1);
+    final r = SimilarityRanker(fakeOllama([]).embedder('m', batchSize: 1));
     await r.addAll(
       chunks.sublist(0, 2),
       onProgress: (done, _) => progress.add(done),
@@ -107,12 +107,19 @@ void main() {
   test('a store filled by another model is rejected', () {
     expect(
       () => SimilarityRanker(
-        fakeOllama([]),
-        model: 'all-minilm',
+        fakeOllama([]).embedder('all-minilm'),
         store: InMemoryVectorStore('nomic-embed-text'),
       ),
       throwsArgumentError,
     );
+  });
+
+  test('works with an embedder that is not Ollama', () async {
+    final r = SimilarityRanker(_OnDeviceEmbedder());
+    await r.addAll(chunks);
+    final best = await r.rank('annual leave', top: 1);
+    expect(best.single.chunk.text, contains('annual leave'));
+    expect(r.store.embeddingModel, 'on-device');
   });
 
   test('top must be positive', () {
@@ -136,4 +143,16 @@ void main() {
       expect(none.bestPieces, isEmpty);
     });
   });
+}
+
+/// An embedder written straight in Dart, as an on-device model would be.
+class _OnDeviceEmbedder implements Embedder {
+  @override
+  String get model => 'on-device';
+
+  @override
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    void Function(int done, int total)? onProgress,
+  }) async => texts.map(fakeEmbedding).toList();
 }
