@@ -40,8 +40,8 @@ void main() {
     String question, {
     List<String> history = const [],
   }) => QueryCondenser(
-    c,
-  ).condense(model: 'test', question: question, history: history);
+    c.chatModel('test'),
+  ).condense(question: question, history: history);
 
   group('when to bother', () {
     test('a short question is left completely alone', () async {
@@ -158,23 +158,23 @@ void main() {
         ),
       );
       final r = await QueryCondenser(
-        hanging,
+        hanging.chatModel('test'),
         timeout: const Duration(milliseconds: 300),
-      ).condense(model: 'test', question: long);
+      ).condense(question: long);
       expect(r.wasCondensed, isFalse);
       expect(r.text, long);
     });
   });
 
   group('the prompt', () {
-    Future<String> systemPromptSent(
-      QueryCondenser Function(OllamaClient) make,
+    Future<Map<String, dynamic>> requestSent(
+      QueryCondenser Function(ChatModel) make,
+      OllamaChatModel Function(OllamaClient) model,
     ) async {
-      String? sent;
+      Map<String, dynamic>? sent;
       final client = OllamaClient(
         client: MockClient((req) async {
-          final messages = (jsonDecode(req.body) as Map)['messages'] as List;
-          sent = (messages.first as Map)['content'] as String;
+          sent = jsonDecode(req.body) as Map<String, dynamic>;
           return http.Response(
             jsonEncode({
               'message': {'content': 'annual leave policy'},
@@ -184,8 +184,15 @@ void main() {
           );
         }),
       );
-      await make(client).condense(model: 'test', question: long);
+      await make(model(client)).condense(question: long);
       return sent!;
+    }
+
+    Future<String> systemPromptSent(
+      QueryCondenser Function(ChatModel) make,
+    ) async {
+      final sent = await requestSent(make, (c) => c.chatModel('test'));
+      return ((sent['messages'] as List).first as Map)['content'] as String;
     }
 
     test('the default carries no example data from one business', () async {
@@ -196,6 +203,24 @@ void main() {
       }
     });
 
+    test('the rewrite asks for the most predictable reply', () async {
+      final sent = await requestSent(
+        QueryCondenser.new,
+        (c) => c.chatModel('test'),
+      );
+      expect((sent['options'] as Map)['temperature'], 0);
+      expect(sent.containsKey('think'), isFalse);
+    });
+
+    test('think: false reaches Ollama for reasoning models', () async {
+      final sent = await requestSent(
+        QueryCondenser.new,
+        (c) => c.chatModel('qwen3', think: false),
+      );
+      expect(sent['model'], 'qwen3');
+      expect(sent['think'], isFalse);
+    });
+
     test('a custom prompt replaces the default', () async {
       final prompt = await systemPromptSent(
         (c) => QueryCondenser(c, systemPrompt: 'Return a search query.'),
@@ -203,4 +228,28 @@ void main() {
       expect(prompt, 'Return a search query.');
     });
   });
+
+  test('works with a chat model that is not Ollama', () async {
+    final model = _OnDeviceChat('annual leave allowance');
+    final r = await QueryCondenser(model).condense(question: long);
+    expect(r.wasCondensed, isTrue);
+    expect(r.text, 'annual leave allowance');
+    expect(model.temperatures, [0]);
+  });
+}
+
+/// A chat model written straight in Dart, as an on-device model would be.
+class _OnDeviceChat implements ChatModel {
+  _OnDeviceChat(this.answer);
+  final String answer;
+  final temperatures = <double>[];
+
+  @override
+  Future<String> reply(
+    List<ChatMessage> messages, {
+    double temperature = 0.2,
+  }) async {
+    temperatures.add(temperature);
+    return answer;
+  }
 }
