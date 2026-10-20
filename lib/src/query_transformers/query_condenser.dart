@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import '../llms/ollama_client.dart';
+import '../llms/chat_model.dart';
 
 /// The result of trying to shorten a question before embedding it.
 class CondensedQuery {
@@ -33,14 +33,19 @@ class CondensedQuery {
 ///
 /// Every failure falls back to the original question: a bad rewrite is worse
 /// than none.
+///
+/// Any [ChatModel] works. With a reasoning model on Ollama, pass
+/// `ollama.chatModel(name, think: false)`: a one-line rewrite does not need
+/// seconds of thinking.
 class QueryCondenser {
   QueryCondenser(
-    this._ollama, {
+    this.chatModel, {
     this.timeout = const Duration(seconds: 25),
     this.systemPrompt = defaultSystemPrompt,
   });
 
-  final OllamaClient _ollama;
+  /// Writes the rewrite.
+  final ChatModel chatModel;
   final Duration timeout;
 
   /// The instructions given to the chat model. Replace it to add examples
@@ -77,10 +82,8 @@ X200 laptop warranty coverage''';
 
   /// Returns the query to embed. Never throws.
   Future<CondensedQuery> condense({
-    required String model,
     required String question,
     List<String> history = const [],
-    bool thinkingModel = false,
   }) async {
     final trimmed = question.trim();
     if (trimmed.isEmpty) return const CondensedQuery.unchanged('');
@@ -102,16 +105,10 @@ X200 laptop warranty coverage''';
 
     try {
       // A one-line rewrite is only useful whole, so it is not streamed.
-      final reply = await _ollama
-          .chat(
-            model: model,
-            messages: messages,
-            temperature: 0,
-            // A one-line rewrite does not need seconds of visible thinking.
-            think: thinkingModel ? false : null,
-          )
+      final reply = await chatModel
+          .reply(messages, temperature: 0)
           .timeout(timeout);
-      return _validate(reply.content ?? '', trimmed);
+      return _validate(reply, trimmed);
     } on Object catch (e) {
       return CondensedQuery.unchanged(trimmed, 'condense failed: $e');
     }

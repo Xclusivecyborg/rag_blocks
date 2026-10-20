@@ -279,17 +279,15 @@ Follow-ups are worse. "And the Abuja one?" means nothing by itself.
 to a few search words, using the conversation so far:
 
 ```dart
-final condenser = QueryCondenser(ollama);
+final condenser = QueryCondenser(ollama.chatModel('llama3.2'));
 
 final first = await condenser.condense(
-  model: 'llama3.2',
   question: 'How much discount will I get if I buy shoes worth 100,000 naira '
       'as an employee?',
 );
 print(first.text); // employee discount policy
 
 final followUp = await condenser.condense(
-  model: 'llama3.2',
   question: 'and the Abuja one?',
   history: ['Where is the Lagos branch?'],
 );
@@ -318,10 +316,10 @@ Short questions (under 8 words) with no conversation history are left
 alone, because they are already good search queries. That also saves a call
 to the model.
 
-Settings: `QueryCondenser(ollama, timeout: Duration(seconds: 10))` controls
+Settings: `QueryCondenser(model, timeout: Duration(seconds: 10))` controls
 how long to wait. If you use a "thinking" model (one that reasons before it
-answers), pass `thinkingModel: true` to skip the reasoning; a rewrite this
-small doesn't need it.
+answers), pass `ollama.chatModel('qwen3', think: false)` to skip the
+reasoning; a rewrite this small doesn't need it.
 
 **Teaching it your documents.** The instructions sent to the model include a
 few generic examples. Small models follow examples closely, so examples
@@ -330,7 +328,7 @@ swap the examples:
 
 ```dart
 final condenser = QueryCondenser(
-  ollama,
+  ollama.chatModel('llama3.2'),
   systemPrompt: QueryCondenser.defaultSystemPrompt.replaceFirst(
     'Q: Could you please tell me what the warranty covers for the X200 laptop?\n'
         'X200 laptop warranty coverage',
@@ -385,7 +383,8 @@ final vectors = await ollama.embed(
 final question = await ollama.embedOne(model: 'all-minilm', input: 'returns window');
 ```
 
-Texts are sent in batches of 16. Change that with `batchSize`.
+Texts are sent in batches of 16. Change that with `batchSize`, or with
+`ollama.embedder('all-minilm', batchSize: 32)` when using the ranker.
 
 **Getting a whole reply:**
 
@@ -463,7 +462,7 @@ The ranker does the searching for you. Give it your passages once, then ask
 it for the best matches to each question:
 
 ```dart
-final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
 
 // Once, when your documents load. Shows progress for a progress bar.
 await ranker.addAll(passages, onProgress: (done, total) => print('$done/$total'));
@@ -488,7 +487,7 @@ What each setting means:
 
 | Setting | What it does | Good starting value |
 |---|---|---|
-| `model` | The search model. Use the same one for as long as you keep the passages. | `all-minilm` |
+| embedder | The search model, such as `ollama.embedder('all-minilm')`. Use the same one for as long as you keep the passages. | `all-minilm` |
 | `top` | The most passages to return. | 3–6 |
 | `maxPerSource` | The most passages to take from any one file. | 2 |
 | `minScore` | Leave out passages that are only loosely related. The score runs from 0 (unrelated) to 1 (same meaning). If nothing scores high enough you get an empty list, which is a good cue to answer "I don't know". | about 0.3 with `all-minilm`; leave it out at first |
@@ -514,8 +513,7 @@ finding the closest ones), and hand it to the ranker:
 
 ```dart
 final ranker = SimilarityRanker(
-  ollama,
-  model: 'all-minilm',
+  ollama.embedder('all-minilm'),
   store: myDatabaseStore, // implements VectorStore
 );
 ```
@@ -528,6 +526,59 @@ the ranker refuses a store filled by a different model.
 If you'd rather compare things yourself, `cosineSimilarity(a, b)` scores two
 fingerprints, and `capPerSource(hits, 5, 2)` applies the per-file limit to
 any sorted list of results.
+
+### Using a model that isn't Ollama: `Embedder` and `ChatModel`
+
+The ranker and the condenser don't need Ollama itself, only something that
+can do their one job:
+
+- The ranker needs an **`Embedder`**: something that turns texts into
+  fingerprints.
+- The condenser needs a **`ChatModel`**: something that writes a reply to a
+  conversation.
+
+`ollama.embedder(...)` and `ollama.chatModel(...)` give you Ollama's. To use
+another model, write a small class for it. This is how the package works on
+**phones**, where Ollama can't run: wrap an on-device model, such as one
+from a llama.cpp, Gemma or ONNX plugin.
+
+```dart
+class PhoneEmbedder implements Embedder {
+  PhoneEmbedder(this.plugin);
+  final MyOnDeviceModel plugin; // whatever your plugin provides
+
+  @override
+  String get model => 'all-minilm-onnx'; // any name; it labels the fingerprints
+
+  @override
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final vectors = <List<double>>[];
+    for (final text in texts) {
+      vectors.add(await plugin.embed(text));
+      onProgress?.call(vectors.length, texts.length);
+    }
+    return vectors;
+  }
+}
+
+class PhoneChat implements ChatModel {
+  PhoneChat(this.plugin);
+  final MyOnDeviceModel plugin;
+
+  @override
+  Future<String> reply(List<ChatMessage> messages, {double temperature = 0.2}) =>
+      plugin.generate(messages, temperature: temperature);
+}
+
+final ranker = SimilarityRanker(PhoneEmbedder(plugin));
+final condenser = QueryCondenser(PhoneChat(plugin));
+```
+
+The same goes for a hosted AI service: wrap its API in an `Embedder` or a
+`ChatModel`, and the rest of the package works unchanged.
 
 ## Putting it all together
 
@@ -546,8 +597,7 @@ Future<String> answer(
   final figure = TableQueryPlanner.answer(tables, question);
 
   // 2. Find the passages, using a shortened version of the question.
-  final condensed = await QueryCondenser(ollama).condense(
-    model: 'llama3.2',
+  final condensed = await QueryCondenser(ollama.chatModel('llama3.2')).condense(
     question: question,
     history: history,
   );
@@ -596,7 +646,7 @@ for (final file in await findSupportedFiles(Directory('knowledge_base'))) {
   passages.addAll(splitter.splitText(text, source: name));
 }
 
-final ranker = SimilarityRanker(ollama, model: 'all-minilm');
+final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
 await ranker.addAll(passages);
 ```
 
@@ -631,17 +681,29 @@ If you change the embedding model, index your documents again (see
 
 ## Where it runs
 
-| | macOS | Linux | Windows |
-|---|---|---|---|
-| Splitting, CSV, tables, query condenser | ✅ | ✅ | ✅ |
-| `OllamaClient` and `findSupportedFiles` | ✅ | ✅ | ✅ |
-| `OllamaLauncher` (start / stop) | ✅ | ✅ | ✅ |
+| | macOS | Linux | Windows | iOS | Android |
+|---|---|---|---|---|---|
+| Splitting, CSV, tables | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Ranker and condenser | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `findSupportedFiles` | ✅ | ✅ | ✅ | ✅ (app's own folders) | ✅ (app's own folders) |
+| `OllamaClient` | ✅ | ✅ | ✅ | ✅ (Ollama on another computer) | ✅ (Ollama on another computer) |
+| `OllamaLauncher` (start / stop) | ✅ | ✅ | ✅ | ❌ | ❌ |
 
 Web apps aren't supported yet, because parts of the package use features
 only available outside the browser.
 
-Flutter on iOS and Android can't run Ollama on the phone itself. Point
-`OllamaClient(baseUrl: ...)` at a computer on the same network that runs it.
+**On phones**, Ollama can't run on the phone itself. You have two options:
+
+- **A model on the phone.** Wrap it in an `Embedder` and a `ChatModel` (see
+  [Using a model that isn't Ollama](#using-a-model-that-isnt-ollama-embedder-and-chatmodel)).
+  Everything works offline.
+- **Ollama on another computer.** Use
+  `OllamaClient(baseUrl: Uri.parse('http://192.168.1.20:11434'))`, and start
+  Ollama there with `OLLAMA_HOST=0.0.0.0 ollama serve` so it accepts
+  connections from the network. Phones block plain `http://` addresses by
+  default: allow them in the app's settings (`NSAppTransportSecurity` on
+  iOS, a network security config on Android). iOS also asks the user for
+  Local Network permission.
 
 ## Troubleshooting
 
@@ -681,8 +743,9 @@ It was installed with Homebrew as a background service. Run
 
 Knowing the limits saves you debugging time:
 
-- **Ollama only.** There is no built-in support for OpenAI, Gemini or other
-  hosted AIs yet.
+- **Ollama is the only model built in.** For OpenAI, Gemini, an on-device
+  model or anything else, write a small `Embedder` or `ChatModel` (see
+  [Using a model that isn't Ollama](#using-a-model-that-isnt-ollama-embedder-and-chatmodel)).
 - **Plain-text files only.** PDF, Word and web pages need converting to text
   first.
 - **No database included.** The built-in store keeps passages in memory

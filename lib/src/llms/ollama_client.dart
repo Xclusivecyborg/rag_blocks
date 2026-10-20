@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'chat_model.dart';
+import 'embedder.dart';
 import 'ollama_launcher.dart';
 
 /// A model already downloaded to this machine.
@@ -38,14 +40,6 @@ class OllamaModel {
 
   @override
   String toString() => name;
-}
-
-class ChatMessage {
-  const ChatMessage(this.role, this.content);
-  final String role; // 'system', 'user' or 'assistant'
-  final String content;
-
-  Map<String, dynamic> toJson() => {'role': role, 'content': content};
 }
 
 /// One streamed piece of a chat reply.
@@ -192,6 +186,24 @@ class OllamaClient {
     required String input,
   }) async => (await embed(model: model, input: [input])).first;
 
+  /// An [Embedder] that uses [model], for `SimilarityRanker`. Texts are sent
+  /// [batchSize] at a time.
+  ///
+  /// ```dart
+  /// final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
+  /// ```
+  OllamaEmbedder embedder(String model, {int batchSize = 16}) =>
+      OllamaEmbedder(this, model, batchSize: batchSize);
+
+  /// A [ChatModel] that uses [model], for `QueryCondenser`. Set [think] to
+  /// false to skip a reasoning model's thinking.
+  ///
+  /// ```dart
+  /// final condenser = QueryCondenser(ollama.chatModel('llama3.2'));
+  /// ```
+  OllamaChatModel chatModel(String model, {bool? think}) =>
+      OllamaChatModel(this, model, think: think);
+
   /// Sends a chat and waits for the whole reply, like Python's
   /// `ollama.chat()`:
   ///
@@ -289,4 +301,53 @@ class OllamaClient {
   }
 
   void close() => _client.close();
+}
+
+/// The [Embedder] that [OllamaClient.embedder] returns.
+class OllamaEmbedder implements Embedder {
+  OllamaEmbedder(this.client, this.model, {this.batchSize = 16});
+
+  final OllamaClient client;
+
+  @override
+  final String model;
+
+  /// How many texts to send per request.
+  final int batchSize;
+
+  @override
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    void Function(int done, int total)? onProgress,
+  }) => client.embed(
+    model: model,
+    input: texts,
+    batchSize: batchSize,
+    onProgress: onProgress,
+  );
+}
+
+/// The [ChatModel] that [OllamaClient.chatModel] returns.
+class OllamaChatModel implements ChatModel {
+  OllamaChatModel(this.client, this.model, {this.think});
+
+  final OllamaClient client;
+  final String model;
+
+  /// Passed to [OllamaClient.chat]. False skips a reasoning model's thinking.
+  final bool? think;
+
+  @override
+  Future<String> reply(
+    List<ChatMessage> messages, {
+    double temperature = 0.2,
+  }) async {
+    final chunk = await client.chat(
+      model: model,
+      messages: messages,
+      temperature: temperature,
+      think: think,
+    );
+    return chunk.content ?? '';
+  }
 }

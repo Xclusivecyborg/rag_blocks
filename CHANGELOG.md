@@ -19,6 +19,9 @@ First release, extracted from the local_rag demo app.
 - `SimilarityRanker`, which finds the chunks closest in meaning to a
   question, with `top`, `maxPerSource` and `minScore` options, and
   `bestPieces` to join the results' text for a prompt.
+- `Embedder` and `ChatModel` interfaces, so the ranker and condenser work
+  with any model, including ones that run on iOS and Android.
+  `ollama.embedder(...)` and `ollama.chatModel(...)` provide Ollama's.
 - The `VectorStore` interface, a ready-made `InMemoryVectorStore`,
   `cosineSimilarity` and `capPerSource`.
 - `findSupportedFiles` for loading a folder of documents.

@@ -49,13 +49,9 @@ abstract interface class VectorStore {
 
   /// The [k] chunks closest to [queryEmbedding], best first, with at most
   /// [maxPerSource] from any one file when it is set.
-  ///
-  /// [exact] compares against every stored vector instead of an approximate
-  /// index. Slower on a big corpus, but it can never miss the true best match.
   List<ScoredChunk> search(
     List<double> queryEmbedding, {
     int k = 5,
     int? maxPerSource,
-    bool exact = false,
   });
 }
