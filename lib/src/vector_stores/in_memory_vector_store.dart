@@ -65,13 +65,11 @@ class InMemoryVectorStore implements VectorStore {
     }
   }
 
-  /// [exact] is ignored: every search here is exact.
   @override
   List<ScoredChunk> search(
     List<double> queryEmbedding, {
     int k = 5,
     int? maxPerSource,
-    bool exact = false,
   }) {
     if (_chunks.isNotEmpty &&
         queryEmbedding.length != _chunks.first.embedding.length) {
