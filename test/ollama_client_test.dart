@@ -68,4 +68,30 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  group('tool calling', () {
+    test('arguments given as a JSON string are decoded', () {
+      final call = ToolCall.fromJson({
+        'function': {'name': 'calculate', 'arguments': '{"measure":"units"}'},
+      });
+      expect(call.arguments, {'measure': 'units'});
+    });
+
+    test('a tool result is sent back under the tool role', () {
+      const call = ToolCall('calculate', {'measure': 'revenue'});
+      final asked = ChatMessage('assistant', '', toolCalls: const [call]);
+      final result = ChatMessage.toolResult(call, 'Total: 10');
+
+      expect(asked.toJson()['tool_calls'], [call.toJson()]);
+      expect(result.toJson(), {
+        'role': 'tool',
+        'content': 'Total: 10',
+        'tool_name': 'calculate',
+      });
+      expect(const ChatMessage('user', 'Hi').toJson(), {
+        'role': 'user',
+        'content': 'Hi',
+      }, reason: 'plain messages are unchanged');
+    });
+  });
 }
