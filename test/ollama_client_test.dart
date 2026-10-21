@@ -70,6 +70,70 @@ void main() {
   });
 
   group('tool calling', () {
+    const calculate = Tool(
+      name: 'calculate',
+      description: 'Adds up a column.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'measure': {'type': 'string'},
+        },
+      },
+    );
+
+    test('tools are sent, and tool calls are read back', () async {
+      Map? sent;
+      final ollama = OllamaClient(
+        client: MockClient((req) async {
+          sent = jsonDecode(req.body) as Map;
+          return http.Response(
+            jsonEncode({
+              'message': {
+                'content': '',
+                'tool_calls': [
+                  {
+                    'function': {
+                      'name': 'calculate',
+                      'arguments': {'measure': 'revenue'},
+                    },
+                  },
+                ],
+              },
+              'done': true,
+            }),
+            200,
+          );
+        }),
+      );
+      final reply = await ollama.chat(
+        model: 'm',
+        messages: messages,
+        tools: const [calculate],
+      );
+
+      expect(sent!['tools'], [calculate.toJson()]);
+      expect(reply.toolCalls.single.name, 'calculate');
+      expect(reply.toolCalls.single.arguments, {'measure': 'revenue'});
+    });
+
+    test('no tools sends no tools key', () async {
+      Map? sent;
+      final ollama = OllamaClient(
+        client: MockClient((req) async {
+          sent = jsonDecode(req.body) as Map;
+          return http.Response(
+            jsonEncode({
+              'message': {'content': 'hi'},
+              'done': true,
+            }),
+            200,
+          );
+        }),
+      );
+      await ollama.chat(model: 'm', messages: messages);
+      expect(sent!.containsKey('tools'), isFalse);
+    });
+
     test('arguments given as a JSON string are decoded', () {
       final call = ToolCall.fromJson({
         'function': {'name': 'calculate', 'arguments': '{"measure":"units"}'},

@@ -44,9 +44,12 @@ class OllamaModel {
 
 /// One streamed piece of a chat reply.
 class ChatChunk {
-  const ChatChunk({this.content, this.thinking});
+  const ChatChunk({this.content, this.thinking, this.toolCalls = const []});
   final String? content;
   final String? thinking;
+
+  /// Tools the model asked to run instead of, or before, answering.
+  final List<ToolCall> toolCalls;
 }
 
 class OllamaException implements Exception {
@@ -214,13 +217,25 @@ class OllamaClient {
   ///
   /// Use [chatStream] to show the reply as it is written instead. Set [think]
   /// to false to skip a reasoning model's thinking.
+  ///
+  /// With [tools], the model may reply with [ChatChunk.toolCalls] instead of
+  /// text. Run them, append the assistant message and one
+  /// [ChatMessage.toolResult] per call, and ask again.
   Future<ChatChunk> chat({
     required String model,
     required List<ChatMessage> messages,
     double temperature = 0.2,
     bool? think,
+    List<Tool> tools = const [],
   }) async {
-    final res = await _sendChat(model, messages, temperature, think, false);
+    final res = await _sendChat(
+      model,
+      messages,
+      temperature,
+      think,
+      tools,
+      false,
+    );
     final json = jsonDecode(await res.stream.bytesToString());
     return _chunkFrom(json as Map<String, dynamic>) ?? const ChatChunk();
   }
@@ -236,8 +251,16 @@ class OllamaClient {
     required List<ChatMessage> messages,
     double temperature = 0.2,
     bool? think,
+    List<Tool> tools = const [],
   }) async* {
-    final res = await _sendChat(model, messages, temperature, think, true);
+    final res = await _sendChat(
+      model,
+      messages,
+      temperature,
+      think,
+      tools,
+      true,
+    );
     final lines = res.stream
         .transform(utf8.decoder)
         .transform(const LineSplitter());
@@ -261,6 +284,7 @@ class OllamaClient {
     List<ChatMessage> messages,
     double temperature,
     bool? think,
+    List<Tool> tools,
     bool stream,
   ) async {
     final req = http.Request('POST', baseUrl.resolve('/api/chat'))
@@ -271,6 +295,7 @@ class OllamaClient {
         'stream': stream,
         'options': {'temperature': temperature},
         'think': ?think,
+        if (tools.isNotEmpty) 'tools': [for (final t in tools) t.toJson()],
       });
 
     final http.StreamedResponse res;
@@ -286,7 +311,8 @@ class OllamaClient {
     return res;
   }
 
-  /// The content of one reply object, or null if it carries no text.
+  /// The content of one reply object, or null if it carries no text and
+  /// asks for no tools.
   static ChatChunk? _chunkFrom(Map<String, dynamic> json) {
     if (json['error'] != null) {
       throw OllamaException('Ollama error: ${json['error']}');
@@ -294,8 +320,18 @@ class OllamaClient {
     final message = json['message'] as Map<String, dynamic>?;
     final content = message?['content'] as String?;
     final thinking = message?['thinking'] as String?;
-    if ((content?.isNotEmpty ?? false) || (thinking?.isNotEmpty ?? false)) {
-      return ChatChunk(content: content, thinking: thinking);
+    final toolCalls = [
+      for (final call in (message?['tool_calls'] as List? ?? const []))
+        ToolCall.fromJson(call as Map<String, dynamic>),
+    ];
+    if ((content?.isNotEmpty ?? false) ||
+        (thinking?.isNotEmpty ?? false) ||
+        toolCalls.isNotEmpty) {
+      return ChatChunk(
+        content: content,
+        thinking: thinking,
+        toolCalls: toolCalls,
+      );
     }
     return null;
   }
