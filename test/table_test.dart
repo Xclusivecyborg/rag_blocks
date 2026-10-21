@@ -84,6 +84,20 @@ void main() {
       expect(result.value, greaterThan(9 * 7663000));
     });
 
+    test('abbreviated months mean the month, not the whole year', () {
+      for (final question in [
+        "How much was stridewell's revenue in jan 2026",
+        'total revenue in Jan 2026',
+        'total revenue in Jan. 2026',
+      ]) {
+        final query = TableQueryPlanner.planFor(sales, question)!;
+        final result = sales.aggregate(query)!;
+        expect(query.range!.label, 'January 2026', reason: question);
+        expect(result.value, kJanuaryRevenue, reason: question);
+        expect(result.matchedRows, kJanuaryRows, reason: question);
+      }
+    });
+
     test('whole-quarter total', () {
       final query = TableQueryPlanner.planFor(
         sales,
@@ -312,6 +326,109 @@ void main() {
     });
   });
 
+  // Each question below used to get a confident, wrong figure: the planner
+  // dropped the part it could not express and totalled the rest.
+  group('the planner declines rather than answering a different question', () {
+    void expectDeclined(List<String> questions) {
+      for (final q in questions) {
+        expect(TableQueryPlanner.planFor(sales, q), isNull, reason: q);
+      }
+    }
+
+    test('negation', () {
+      // Was: Heritage only, ₦25.2M.
+      expectDeclined([
+        'total revenue excluding Heritage in 2026',
+        'total revenue for everything except Online in 2026',
+        'total revenue not from Online in 2026',
+        "how much revenue didn't come from Online in 2026",
+        'total non-Online revenue in 2026',
+      ]);
+    });
+
+    test('conditions on a number', () {
+      // Was: "at least" read as a minimum, "more than" ignored.
+      expectDeclined([
+        'total revenue in weeks with at least 40 units sold in 2026',
+        'total revenue in weeks with more than 40 units sold in 2026',
+        'total revenue for weeks above 1000000 in 2026',
+        'how many records have units_sold > 40',
+      ]);
+    });
+
+    test('two values of one column', () {
+      // Was: Formal only.
+      expectDeclined([
+        'total revenue for Heritage and Formal in 2026',
+        'total revenue at Online or Victoria Island in 2026',
+      ]);
+    });
+
+    test('values from different columns still combine', () {
+      final query = TableQueryPlanner.planFor(
+        sales,
+        'total revenue for Heritage at Online in 2026',
+      )!;
+      expect(query.filters.map((f) => f.value), {'Online', 'Heritage'});
+    });
+
+    test('spans of more than one month, quarter or year', () {
+      // Was: January alone.
+      expectDeclined([
+        'total revenue in jan-feb 2026',
+        'total revenue from january to february 2026',
+        'total revenue in january and february 2026',
+        'total revenue since february 2026',
+        'total revenue between january and march 2026',
+        'total revenue in q1 and q2 2026',
+        'total revenue in 2025 and 2026',
+      ]);
+    });
+
+    test('dates it cannot place', () {
+      // Was: every row, or all of 2026.
+      expectDeclined([
+        'total revenue in Q1',
+        'total revenue last month',
+        'total revenue this year',
+        'total revenue so far',
+        'most recent week revenue',
+        'total revenue in the first quarter of 2026',
+        'total revenue in H1 2026',
+        'total revenue in 01/2026',
+        'total revenue in 2026-02',
+        "total revenue in jan '26",
+      ]);
+    });
+
+    test('a single day is not widened to its month', () {
+      expectDeclined([
+        'total revenue on 5 january 2026',
+        'total revenue on the 5th of january 2026',
+        'total revenue on jan 5, 2026',
+      ]);
+    });
+
+    test('part of a multi-word name', () {
+      // Was: every location, ₦204.7M.
+      expectDeclined([
+        'total revenue for Ikeja in 2026',
+        'total revenue at our Abuja store in 2026',
+      ]);
+    });
+
+    test('whole multi-word names still filter', () {
+      for (final (question, location) in [
+        ('total revenue for Ikeja City Mall in 2026', 'Ikeja City Mall'),
+        ('total revenue at Wuse 2 Abuja in 2026', 'Wuse 2 Abuja'),
+        ('total revenue at victoria island in 2026', 'Victoria Island'),
+      ]) {
+        final query = TableQueryPlanner.planFor(sales, question)!;
+        expect(query.filters.single.value, location, reason: question);
+      }
+    });
+  });
+
   group('date ranges', () {
     test('a month needs a year to be unambiguous', () {
       final withYear = TableQueryPlanner.planFor(
@@ -320,12 +437,9 @@ void main() {
       )!;
       expect(withYear.range, isNotNull);
 
-      final without = TableQueryPlanner.planFor(
-        sales,
-        'total revenue in january',
-      )!;
+      // Without a year it is declined: a range of null would total every row.
       expect(
-        without.range,
+        TableQueryPlanner.planFor(sales, 'total revenue in january'),
         isNull,
         reason: 'a bare month must not silently span every year',
       );
