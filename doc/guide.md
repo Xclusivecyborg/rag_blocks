@@ -279,6 +279,48 @@ connection and Ollama stops writing.
 answer, and that reasoning arrives in `thinking`. Pass `think: false` to
 `chat` or `chatStream` to skip it and get a faster answer.
 
+**Letting the AI call your functions (tool calling):** some questions need
+your own code, such as looking up an order or adding up a column over every
+row. Describe each function as a `Tool`, with its arguments as a JSON Schema.
+The model decides when to use one; its reply then carries `toolCalls`
+instead of text. Run each call, send the result back, and ask again:
+
+```dart
+final lookup = Tool(
+  name: 'order_status',
+  description: 'Look up the status of an order by its number.',
+  parameters: {
+    'type': 'object',
+    'required': ['order'],
+    'properties': {
+      'order': {'type': 'string'},
+    },
+  },
+);
+
+final messages = [ChatMessage('user', 'Where is order 1042?')];
+while (true) {
+  final reply = await ollama.chat(model: 'gpt-oss', messages: messages, tools: [lookup]);
+  if (reply.toolCalls.isEmpty) {
+    print(reply.content); // the answer, written with the results
+    break;
+  }
+  messages.add(ChatMessage('assistant', reply.content ?? '', toolCalls: reply.toolCalls));
+  for (final call in reply.toolCalls) {
+    messages.add(ChatMessage.toolResult(call, statusOf(call.arguments['order'])));
+  }
+}
+```
+
+Tool calls also arrive through `chatStream`, in the piece's `toolCalls`. Not
+every model supports tools: `gpt-oss`, `llama3.1` and newer, and `qwen3` do.
+Check the arguments before you trust them. Models misspell names and leave
+out fields, so return a message saying what's wrong, and the model can try
+again. Put a limit on the rounds, too, so a confused model can't loop
+forever. If a model writes a tool call that isn't valid JSON, Ollama replies
+with an error containing "error parsing tool call"; tell the model and ask
+again.
+
 **When something goes wrong,** for example Ollama isn't running or the
 model isn't downloaded, the methods throw an `OllamaException` whose message
 explains the problem. `version()` is the exception: it returns `null`
@@ -626,3 +668,5 @@ Knowing the limits saves you debugging time:
   quickly finds the ones closest to a question.
 - **Thinking model**: a chat model that reasons step by step before
   answering.
+- **Tool calling**: letting the chat model ask your code to run a function,
+  and answer with the result.
