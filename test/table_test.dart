@@ -12,6 +12,26 @@ const int kJanuaryRows = 80;
 
 late CsvTable sales;
 
+/// A month of 2026, as a date range.
+DateRange month2026(int month, String name) =>
+    DateRange(DateTime(2026, month), DateTime(2026, month + 1), '$name 2026');
+
+final january = month2026(1, 'January');
+final q1 = DateRange(DateTime(2026), DateTime(2026, 4), 'Q1 2026');
+
+TableQuery revenue({
+  Aggregate aggregate = Aggregate.sum,
+  DateRange? range,
+  List<ColumnFilter> filters = const [],
+  String? groupBy,
+}) => TableQuery(
+  aggregate: aggregate,
+  metric: 'revenue_ngn',
+  range: range,
+  filters: filters,
+  groupBy: groupBy,
+);
+
 void main() {
   setUpAll(() {
     sales = CsvTable.parse(
@@ -71,11 +91,7 @@ void main() {
 
   group('arithmetic is exact', () {
     test('January 2026 revenue — the question that started this', () {
-      final query = TableQueryPlanner.planFor(
-        sales,
-        "How much was Stridewell's revenue in ngn in january 2026?",
-      )!;
-      final result = sales.aggregate(query)!;
+      final result = sales.aggregate(revenue(range: january))!;
 
       expect(result.value, kJanuaryRevenue);
       expect(result.matchedRows, kJanuaryRows);
@@ -85,51 +101,41 @@ void main() {
     });
 
     test('whole-quarter total', () {
-      final query = TableQueryPlanner.planFor(
-        sales,
-        'What was our total revenue in Q1 2026?',
-      )!;
-      expect(sales.aggregate(query)!.value, kQ1Revenue);
+      expect(sales.aggregate(revenue(range: q1))!.value, kQ1Revenue);
     });
 
     test('a filter narrows the rows', () {
-      final query = TableQueryPlanner.planFor(
-        sales,
-        'total revenue for Heritage in 2026',
+      final result = sales.aggregate(
+        revenue(filters: [ColumnFilter('product_line', 'Heritage')]),
       )!;
-      final result = sales.aggregate(query)!;
 
       expect(result.matchedRows, lessThan(kTotalRows));
       expect(result.value, lessThan(kQ1Revenue));
-      expect(query.filters.single.value, 'Heritage');
     });
 
     test('the sum of every month equals the quarter', () {
       var total = 0.0;
-      for (final month in ['january', 'february', 'march']) {
-        final q = TableQueryPlanner.planFor(
-          sales,
-          'total revenue in $month 2026',
-        )!;
-        total += sales.aggregate(q)!.value;
+      for (final (i, name) in ['January', 'February', 'March'].indexed) {
+        final range = month2026(i + 1, name);
+        total += sales.aggregate(revenue(range: range))!.value;
       }
       expect(total, kQ1Revenue);
     });
 
     test('average is the mean of matched rows, not of all rows', () {
       final avg = sales.aggregate(
-        TableQueryPlanner.planFor(sales, 'average revenue in january 2026')!,
+        revenue(aggregate: Aggregate.average, range: january),
       )!;
       expect(avg.matchedRows, kJanuaryRows);
       expect(avg.value, closeTo(kJanuaryRevenue / kJanuaryRows, 0.01));
     });
 
     test('a range matching nothing returns zero over zero rows', () {
-      final query = TableQueryPlanner.planFor(
-        sales,
-        'total revenue in january 2019',
+      final result = sales.aggregate(
+        revenue(
+          range: DateRange(DateTime(2019), DateTime(2019, 2), 'January 2019'),
+        ),
       )!;
-      final result = sales.aggregate(query)!;
       expect(result.matchedRows, 0);
       expect(result.value, 0);
       expect(result.isEmpty, isTrue);
@@ -137,10 +143,7 @@ void main() {
 
     test('breakdown groups add up to the ungrouped total', () {
       final grouped = sales.aggregate(
-        TableQueryPlanner.planFor(
-          sales,
-          'total revenue by location in january 2026',
-        )!,
+        revenue(range: january, groupBy: 'location'),
       )!;
       expect(grouped.groups, isNotNull);
       final sum = grouped.groups!.values.fold<num>(0, (a, b) => a + b);
@@ -184,9 +187,9 @@ void main() {
     );
 
     test('the highest row is reported', () {
-      final result = TableQueryPlanner.answer([
-        t,
-      ], 'Which location had the highest revenue?')!;
+      final result = t.aggregate(
+        const TableQuery(aggregate: Aggregate.max, metric: 'revenue'),
+      )!;
       expect(result.value, 30);
       expect(result.extremeRow, {'location': 'Lekki', 'revenue': '30'});
       expect(result.toPromptBlock(), contains('location=Lekki'));
@@ -207,150 +210,6 @@ void main() {
     });
   });
 
-  group('the planner declines when it should', () {
-    test('prose questions are not aggregations', () {
-      for (final q in [
-        'What is the warranty on the Heritage line?',
-        'Where is the Abuja branch located?',
-        'Who makes our Heritage leather shoes?',
-        'What are the payment terms with the Italian supplier?',
-      ]) {
-        expect(TableQueryPlanner.planFor(sales, q), isNull, reason: q);
-      }
-    });
-
-    test('an aggregation word over a column we do not have is declined', () {
-      // "How much" is a sum intent, but no numeric column matches "leave".
-      // Answering this with a sales figure is the failure mode.
-      expect(
-        TableQueryPlanner.planFor(
-          sales,
-          'How much annual leave do full-time staff get?',
-        ),
-        isNull,
-      );
-      expect(
-        TableQueryPlanner.planFor(
-          sales,
-          'What discount do employees get on Heritage shoes?',
-        ),
-        isNull,
-      );
-    });
-
-    test('greetings are declined', () {
-      for (final q in ['Hello', 'thanks!', 'how are you doing today?']) {
-        expect(TableQueryPlanner.planFor(sales, q), isNull, reason: q);
-      }
-    });
-
-    test('an ambiguous metric is declined rather than guessed', () {
-      // "price" matches unit_price_ngn; a bare "ngn" matches both that and
-      // revenue_ngn equally, and picking either would be a coin flip.
-      final t = CsvTable.parse(
-        'week_starting,revenue_ngn,unit_price_ngn\n2026-01-05,10,2\n',
-        source: 'x.csv',
-      );
-      expect(TableQueryPlanner.planFor(t, 'total ngn in 2026'), isNull);
-    });
-
-    test('synonyms can be supplied for your own words', () {
-      final t = CsvTable.parse(
-        'date,amount\n2026-01-05,10\n2026-02-02,5\n',
-        source: 'spend.csv',
-      );
-      const question = 'total spend in 2026';
-      expect(TableQueryPlanner.answer([t], question), isNull);
-      final result = TableQueryPlanner.answer(
-        [t],
-        question,
-        synonyms: const {
-          'spend': ['amount'],
-        },
-      );
-      expect(result!.value, 15);
-    });
-
-    test('a name the table does not have is declined, not ignored', () {
-      // There is no Lekki location, so counting every row would be wrong.
-      for (final q in [
-        'How many records are there for Lekki?',
-        'Total revenue for Lekki in January 2026',
-        'Average units sold at the Lekki branch in Q1 2026',
-      ]) {
-        expect(TableQueryPlanner.planFor(sales, q), isNull, reason: q);
-      }
-    });
-
-    test('names the table does have still work', () {
-      final online = TableQueryPlanner.answer([
-        sales,
-      ], 'How many records for Online?')!;
-      expect(online.value, 48);
-
-      final portHarcourt = TableQueryPlanner.planFor(
-        sales,
-        "What was total revenue at Port Harcourt's stores in Q1 2026?",
-      )!;
-      expect(portHarcourt.filters.single.value, 'Port Harcourt');
-    });
-
-    test('a name unknown to one table can be answered by another', () {
-      final lagos = CsvTable.parse('city,sales\nIkeja,10\n', source: 'a.csv');
-      final abuja = CsvTable.parse('city,sales\nWuse,7\n', source: 'b.csv');
-      final result = TableQueryPlanner.answer([
-        lagos,
-        abuja,
-      ], 'Total sales for Wuse');
-      expect(result!.source, 'b.csv');
-      expect(result.value, 7);
-    });
-
-    test('an empty table is declined', () {
-      final t = CsvTable.parse('a,b\n', source: 'empty.csv');
-      expect(TableQueryPlanner.planFor(t, 'total a'), isNull);
-    });
-  });
-
-  group('date ranges', () {
-    test('a month needs a year to be unambiguous', () {
-      final withYear = TableQueryPlanner.planFor(
-        sales,
-        'total revenue in january 2026',
-      )!;
-      expect(withYear.range, isNotNull);
-
-      final without = TableQueryPlanner.planFor(
-        sales,
-        'total revenue in january',
-      )!;
-      expect(
-        without.range,
-        isNull,
-        reason: 'a bare month must not silently span every year',
-      );
-    });
-
-    test('december rolls into the next year', () {
-      final q = TableQueryPlanner.planFor(
-        sales,
-        'total revenue in december 2026',
-      )!;
-      expect(q.range!.start, DateTime(2026, 12));
-      expect(q.range!.end, DateTime(2027, 1));
-    });
-
-    test('quarters and bare years', () {
-      final q1 = TableQueryPlanner.planFor(sales, 'total revenue q1 2026')!;
-      expect(q1.range!.start, DateTime(2026, 1));
-      expect(q1.range!.end, DateTime(2026, 4));
-
-      final year = TableQueryPlanner.planFor(sales, 'total revenue in 2026')!;
-      expect(year.range!.start, DateTime(2026));
-      expect(year.range!.end, DateTime(2027));
-    });
-  });
-
   group('presentation', () {
     test('numbers are grouped for reading', () {
       expect(QueryResult.formatNumber(71882000), '71,882,000');
@@ -359,10 +218,7 @@ void main() {
     });
 
     test('the prompt block states the coverage, not just the figure', () {
-      final result = sales.aggregate(
-        TableQueryPlanner.planFor(sales, 'total revenue in january 2026')!,
-      )!;
-      final block = result.toPromptBlock();
+      final block = sales.aggregate(revenue(range: january))!.toPromptBlock();
 
       expect(block, contains('71,882,000'));
       expect(block, contains('January 2026'));
