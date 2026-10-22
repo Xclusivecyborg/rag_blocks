@@ -113,7 +113,6 @@ with `dart run example/main.dart`.
 | [`findSupportedFiles`](#load-a-folder) | Lists the documents in a folder. |
 | [`RecursiveCharacterTextSplitter`](#cut-text-into-pieces) | Cuts documents into small pieces for searching. |
 | [`csvToProse`](#make-spreadsheets-searchable) | Turns spreadsheet rows into sentences the search understands. |
-| [`CsvTable`, `TableQueryPlanner`](#get-exact-totals-from-spreadsheets) | Works out totals and averages over every row, instead of letting the AI guess. |
 | [`QueryCondenser`](#improve-questions-before-searching) | Shortens long questions and completes follow-ups before searching. |
 | [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, and starts or stops it. |
 | [`SimilarityRanker`](#find-the-best-pieces) | Finds the pieces closest in meaning to a question. |
@@ -149,25 +148,6 @@ column names, so a question about "staff in Lagos" can find it.
 print(csvToProse('branch,city,staff\nSHO-114,Lagos,12'));
 // Record 1. branch: SHO-114. city: Lagos. staff: 12.
 ```
-
-### Get exact totals from spreadsheets
-
-The search only shows the AI a few rows, so if you ask for a total it adds
-up those few and gets it wrong. `TableQueryPlanner` spots questions about
-totals, averages, counts, highest and lowest, and works them out over every
-row:
-
-```dart
-final sales = CsvTable.parse(csvText, source: 'sales.csv');
-final result = TableQueryPlanner.answer([sales], 'What was total revenue in January 2026?');
-print(result?.toPromptBlock());
-// Total revenue_ngn in January 2026: 71,882,000
-// Computed over 80 matching row(s) out of 240 in sales.csv.
-```
-
-Include that text in your message to the AI, and it will quote the exact
-figure. When the question isn't clearly a calculation, `answer` returns
-`null` and you use the normal search instead.
 
 ### Improve questions before searching
 
