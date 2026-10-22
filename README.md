@@ -113,9 +113,8 @@ with `dart run example/main.dart`.
 | [`findSupportedFiles`](#load-a-folder) | Lists the documents in a folder. |
 | [`RecursiveCharacterTextSplitter`](#cut-text-into-pieces) | Cuts documents into small pieces for searching. |
 | [`csvToProse`](#make-spreadsheets-searchable) | Turns spreadsheet rows into sentences the search understands. |
-| [`CsvTable`, `TableQueryPlanner`](#get-exact-totals-from-spreadsheets) | Works out totals and averages over every row, instead of letting the AI guess. |
 | [`QueryCondenser`](#improve-questions-before-searching) | Shortens long questions and completes follow-ups before searching. |
-| [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, and starts or stops it. |
+| [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, lets the AI call your functions (tool calling), and starts or stops Ollama. |
 | [`SimilarityRanker`](#find-the-best-pieces) | Finds the pieces closest in meaning to a question. |
 | [`VectorStore`, `InMemoryVectorStore`](#keep-pieces-in-a-database) | Where the ranker keeps pieces: in memory, or in your own database. |
 
@@ -150,25 +149,6 @@ print(csvToProse('branch,city,staff\nSHO-114,Lagos,12'));
 // Record 1. branch: SHO-114. city: Lagos. staff: 12.
 ```
 
-### Get exact totals from spreadsheets
-
-The search only shows the AI a few rows, so if you ask for a total it adds
-up those few and gets it wrong. `TableQueryPlanner` spots questions about
-totals, averages, counts, highest and lowest, and works them out over every
-row:
-
-```dart
-final sales = CsvTable.parse(csvText, source: 'sales.csv');
-final result = TableQueryPlanner.answer([sales], 'What was total revenue in January 2026?');
-print(result?.toPromptBlock());
-// Total revenue_ngn in January 2026: 71,882,000
-// Computed over 80 matching row(s) out of 240 in sales.csv.
-```
-
-Include that text in your message to the AI, and it will quote the exact
-figure. When the question isn't clearly a calculation, `answer` returns
-`null` and you use the normal search instead.
-
 ### Improve questions before searching
 
 Long questions full of extra detail search badly, and follow-ups like "and
@@ -195,6 +175,31 @@ uses it for you).
 await for (final piece in ollama.chatStream(model: 'llama3.2', messages: messages)) {
   stdout.write(piece.content ?? '');
 }
+```
+
+The model can also call your own functions. Describe each one as a `Tool`;
+when the model wants it, the reply carries `toolCalls` instead of text. Run
+them, send each result back, and ask again:
+
+```dart
+final lookup = Tool(
+  name: 'order_status',
+  description: 'Look up the status of an order by its number.',
+  parameters: {
+    'type': 'object',
+    'required': ['order'],
+    'properties': {
+      'order': {'type': 'string'},
+    },
+  },
+);
+final reply = await ollama.chat(model: 'gpt-oss', messages: messages, tools: [lookup]);
+for (final call in reply.toolCalls) {
+  messages
+    ..add(ChatMessage('assistant', '', toolCalls: [call]))
+    ..add(ChatMessage.toolResult(call, statusOf(call.arguments['order'])));
+}
+// Ask again with the results to get the answer.
 ```
 
 `OllamaLauncher` starts and stops Ollama, for when you want your own

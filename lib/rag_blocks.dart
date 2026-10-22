@@ -16,6 +16,7 @@
 library;
 
 export 'src/document_loaders/directory_loader.dart';
+export 'src/document_transformers/csv_grid.dart';
 export 'src/document_transformers/csv_to_prose.dart';
 export 'src/llms/chat_model.dart';
 export 'src/llms/embedder.dart';
@@ -24,8 +25,6 @@ export 'src/llms/ollama_launcher.dart';
 export 'src/query_transformers/query_condenser.dart';
 export 'src/retrievers/cap_per_source.dart';
 export 'src/retrievers/similarity_ranker.dart';
-export 'src/tables/csv_table.dart';
-export 'src/tables/table_query_planner.dart';
 export 'src/text_splitters/recursive_character_text_splitter.dart';
 export 'src/vector_stores/in_memory_vector_store.dart';
 export 'src/vector_stores/vector_store.dart';

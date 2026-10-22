@@ -127,145 +127,6 @@ records are never cut in half.
 
 Quoted values that contain commas or line breaks (`"Doe, Jane"`) are handled.
 
-### Exact maths over spreadsheets: `CsvTable` and `TableQueryPlanner`
-
-**The problem:** the search only hands the AI a few passages. Ask "what was
-our total revenue in January?" and the AI sees 5 of the 80 January rows,
-adds them up, and gives a confident wrong number.
-
-**The fix:** keep the spreadsheet as a table too. When a question is clearly
-a calculation, do the maths in code over every row and give the AI the exact
-figure.
-
-```dart
-final sales = CsvTable.parse(
-  File('sales_q1_2026.csv').readAsStringSync(),
-  source: 'sales_q1_2026.csv',
-);
-
-final result = TableQueryPlanner.answer(
-  [sales],
-  'What was total revenue in January 2026?',
-);
-
-if (result != null) {
-  print(result.toPromptBlock());
-}
-```
-
-```text
-Total revenue_ngn in January 2026: 71,882,000
-Computed over 80 matching row(s) out of 240 in sales_q1_2026.csv.
-```
-
-Paste that block into the message to the AI, and it will quote the figure
-instead of guessing. The second line matters: it tells the AI that the
-figure covers everything, so it doesn't hedge.
-
-**Questions it understands:**
-
-| You ask | It works out |
-|---|---|
-| "Total revenue in January 2026" | the sum of a column, for one month |
-| "Average units sold by location in Q1 2026" | the average, plus one average per location |
-| "Which location had the highest revenue in March 2026?" | the largest value **and the row it came from** |
-| "Lowest units returned in 2026" | the smallest value and its row |
-| "Total revenue for the Heritage line in February 2026" | a sum over only the Heritage rows |
-| "How many records for Online?" | a count of rows |
-
-For example, "Average units sold by location in Q1 2026" gives:
-
-```text
-Average units_sold in Q1 2026: 18.21
-Computed over 240 matching row(s) out of 240 in sales_q1_2026.csv.
-Breakdown:
-  Ikeja City Mall: 20.15
-  Online: 18.63
-  Port Harcourt: 8.29
-  Victoria Island: 28.29
-  Wuse 2 Abuja: 15.69
-```
-
-And "Which location had the highest revenue in March 2026?" adds the row
-that answers "which":
-
-```text
-Maximum revenue_ngn in March 2026: 2,997,000
-Computed over 80 matching row(s) out of 240 in sales_q1_2026.csv.
-Found in the row: week_starting=2026-03-09, location=Victoria Island, ...
-```
-
-You can read the same details in code: `result.value`, `result.groups` and
-`result.extremeRow`.
-
-**How it reads a question:**
-
-- **Which column:** it matches words in the question against column names.
-  "revenue" finds `revenue_ngn`, and a few everyday words are understood
-  too ("sales" and "income" mean revenue). Teach it your own words with
-  `synonyms`, shown below.
-- **Which rows:** any value from the spreadsheet that appears in the
-  question becomes a filter, such as "Heritage" or "Online".
-- **Which dates:** "January 2026", "Q1 2026" or "2026". A **year is
-  required**, so "January" alone never quietly mixes several years.
-- **Which breakdown:** "by location" or "per product line" splits the result.
-
-**It says "not me" when it isn't sure.** `answer` returns `null` when the
-question isn't clearly a calculation, or when two columns match equally
-well. That's on purpose: "How much annual leave do staff get?" contains "how
-much" but must not come back as the sum of a sales column. When you get
-`null`, use the normal search instead.
-
-It also declines when the question asks about something the spreadsheet
-doesn't have. "How many records for Lekki?" returns `null` when there's no
-Lekki in the file, instead of quietly counting every row. It checks
-capitalised names after "for", "in", "at" or "from", which is where
-questions usually name what they want.
-
-**Your own words.** If your users say "spend" and the column is called
-`amount`, tell the planner:
-
-```dart
-final result = TableQueryPlanner.answer(
-  [expenses],
-  'Total spend in 2026',
-  synonyms: {
-    ...TableQueryPlanner.defaultSynonyms,
-    'spend': ['amount'],
-  },
-);
-```
-
-Keep the list short: every extra word is another question the planner
-might claim when it shouldn't.
-
-You can also skip the question reading and ask directly:
-
-```dart
-final heritageFebruary = sales.aggregate(
-  TableQuery(
-    aggregate: Aggregate.sum,
-    metric: 'revenue_ngn',
-    filters: const [ColumnFilter('product_line', 'Heritage')],
-    range: DateRange(DateTime(2026, 2), DateTime(2026, 3), 'February 2026'),
-  ),
-);
-print(heritageFebruary?.value); // 8924000
-```
-
-**Saving tables between runs:** reading a large CSV every time is wasteful,
-so save the tables next to your search index:
-
-```dart
-File('tables.json').writeAsStringSync(CsvTable.encodeAll([sales]));
-
-// Later, or on the next launch:
-final tables = CsvTable.decodeAll(File('tables.json').readAsStringSync());
-```
-
-`decodeAll` returns an empty list instead of crashing if the file is damaged.
-If that happens, just read the CSVs again.
-
 ### Better questions, better searches: `QueryCondenser`
 
 **The problem:** the search compares meaning, and everything in the question
@@ -417,6 +278,48 @@ connection and Ollama stops writing.
 **Thinking models** (such as `gpt-oss` or `qwen3`) reason before they
 answer, and that reasoning arrives in `thinking`. Pass `think: false` to
 `chat` or `chatStream` to skip it and get a faster answer.
+
+**Letting the AI call your functions (tool calling):** some questions need
+your own code, such as looking up an order or adding up a column over every
+row. Describe each function as a `Tool`, with its arguments as a JSON Schema.
+The model decides when to use one; its reply then carries `toolCalls`
+instead of text. Run each call, send the result back, and ask again:
+
+```dart
+final lookup = Tool(
+  name: 'order_status',
+  description: 'Look up the status of an order by its number.',
+  parameters: {
+    'type': 'object',
+    'required': ['order'],
+    'properties': {
+      'order': {'type': 'string'},
+    },
+  },
+);
+
+final messages = [ChatMessage('user', 'Where is order 1042?')];
+while (true) {
+  final reply = await ollama.chat(model: 'gpt-oss', messages: messages, tools: [lookup]);
+  if (reply.toolCalls.isEmpty) {
+    print(reply.content); // the answer, written with the results
+    break;
+  }
+  messages.add(ChatMessage('assistant', reply.content ?? '', toolCalls: reply.toolCalls));
+  for (final call in reply.toolCalls) {
+    messages.add(ChatMessage.toolResult(call, statusOf(call.arguments['order'])));
+  }
+}
+```
+
+Tool calls also arrive through `chatStream`, in the piece's `toolCalls`. Not
+every model supports tools: `gpt-oss`, `llama3.1` and newer, and `qwen3` do.
+Check the arguments before you trust them. Models misspell names and leave
+out fields, so return a message saying what's wrong, and the model can try
+again. Put a limit on the rounds, too, so a confused model can't loop
+forever. If a model writes a tool call that isn't valid JSON, Ollama replies
+with an error containing "error parsing tool call"; tell the model and ask
+again.
 
 **When something goes wrong,** for example Ollama isn't running or the
 model isn't downloaded, the methods throw an `OllamaException` whose message
@@ -582,21 +485,17 @@ The same goes for a hosted AI service: wrap its API in an `Embedder` or a
 
 ## Putting it all together
 
-A typical "answer a question" function tries the exact maths first, then
-falls back to searching:
+A typical "answer a question" function shortens the question, searches with
+it, and asks the chat model:
 
 ```dart
 Future<String> answer(
   String question, {
   required OllamaClient ollama,
   required SimilarityRanker ranker,
-  required List<CsvTable> tables,
   List<String> history = const [],
 }) async {
-  // 1. A calculation over a spreadsheet? Then work it out exactly.
-  final figure = TableQueryPlanner.answer(tables, question);
-
-  // 2. Find the passages, using a shortened version of the question.
+  // 1. Find the passages, using a shortened version of the question.
   final condensed = await QueryCondenser(ollama.chatModel('llama3.2')).condense(
     question: question,
     history: history,
@@ -606,20 +505,16 @@ Future<String> answer(
     for (final hit in hits) '[${hit.chunk.source}]\n${hit.chunk.text}',
   ].join('\n\n');
 
-  // 3. Ask, with the exact figure (if any) and the passages.
+  // 2. Ask, with the passages.
   final reply = await ollama.chat(
     model: 'llama3.2',
     messages: [
       const ChatMessage(
         'system',
-        'Answer using only the information below. If a computed figure is '
-            'given, use it exactly. If the answer is not there, say so.',
+        'Answer using only the excerpts below. If the answer is not there, '
+            'say so.',
       ),
-      ChatMessage('user', [
-        if (figure != null) 'Computed figure:\n${figure.toPromptBlock()}',
-        'Excerpts:\n$excerpts',
-        'Question: $question',
-      ].join('\n\n')),
+      ChatMessage('user', 'Excerpts:\n$excerpts\n\nQuestion: $question'),
     ],
   );
   return reply.content ?? '';
@@ -633,22 +528,23 @@ To index a whole folder, combine the loader, `csvToProse` and the splitter:
 
 ```dart
 final splitter = RecursiveCharacterTextSplitter();
-final tables = <CsvTable>[];
 final passages = <Chunk>[];
 
 for (final file in await findSupportedFiles(Directory('knowledge_base'))) {
   final name = file.uri.pathSegments.last;
   var text = await file.readAsString();
-  if (fileExtension(name) == '.csv') {
-    tables.add(CsvTable.parse(text, source: name)); // for exact maths
-    text = csvToProse(text); // for searching
-  }
+  if (fileExtension(name) == '.csv') text = csvToProse(text);
   passages.addAll(splitter.splitText(text, source: name));
 }
 
 final ranker = SimilarityRanker(ollama.embedder('all-minilm'));
 await ranker.addAll(passages);
 ```
+
+Searching is the wrong tool for totals and averages over a spreadsheet: it
+hands the AI a few rows, and the AI adds up that sample. Instead, give the AI
+a tool that works out the figure in your own code over every row (see
+[Talking to the AI](#talking-to-the-ai-ollamaclient)).
 
 ## Choosing settings
 
@@ -728,9 +624,9 @@ it's there but the answer is still wrong, make the system message stricter,
 or try a larger chat model.
 
 **Answers about totals or averages are wrong.**
-Make sure the spreadsheet is passed to `TableQueryPlanner.answer`, and that
-the question names a year ("January **2026**"). If it returns `null`, check
-that the question uses words from the column name.
+The search only hands the AI a few rows, so it adds up a sample. Work the
+figure out in your own code over every row instead, and let the AI ask for it
+through tool calling (see [Talking to the AI](#talking-to-the-ai-ollamaclient)).
 
 **Search results all come from one big file.**
 Pass `maxPerSource: 2` to `ranker.rank` (or call `capPerSource` yourself).
@@ -751,12 +647,6 @@ Knowing the limits saves you debugging time:
 - **No database included.** The built-in store keeps passages in memory
   only. To keep them between runs, plug in your own database (see
   [Keeping passages in a database](#keeping-passages-in-a-database-vectorstore)).
-- **The table planner reads English**, and understands a fixed set of
-  words. Unusual phrasing returns `null`, which is safe but means no exact
-  figure. A name that isn't in the spreadsheet is only caught when it's
-  capitalised and follows "for", "in", "at" or "from". Others, such as a
-  lower-case "lekki", are ignored, so check `result.query.describe()` if a
-  figure looks too large.
 - **No web apps.** It runs in command-line tools, servers and Flutter apps,
   but not in a browser.
 - **Comma-separated files only.** Files separated by tabs or semicolons
@@ -778,3 +668,5 @@ Knowing the limits saves you debugging time:
   quickly finds the ones closest to a question.
 - **Thinking model**: a chat model that reasons step by step before
   answering.
+- **Tool calling**: letting the chat model ask your code to run a function,
+  and answer with the result.

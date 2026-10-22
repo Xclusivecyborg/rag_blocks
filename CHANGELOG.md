@@ -1,3 +1,12 @@
+## Unreleased
+
+- Tool calling: `chat` and `chatStream` take `tools`, and a reply that asks
+  for a tool carries `ChatChunk.toolCalls`. `Tool`, `ToolCall` and
+  `ChatMessage.toolResult` describe tools and send results back.
+- Removed `TableQueryPlanner` and `CsvTable`. The local_rag app now answers
+  questions about spreadsheets by tool calling and keeps its own table code.
+  `parseCsvGrid` is still exported.
+
 ## 0.1.0
 
 First release, extracted from the local_rag demo app.
