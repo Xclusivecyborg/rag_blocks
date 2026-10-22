@@ -114,7 +114,7 @@ with `dart run example/main.dart`.
 | [`RecursiveCharacterTextSplitter`](#cut-text-into-pieces) | Cuts documents into small pieces for searching. |
 | [`csvToProse`](#make-spreadsheets-searchable) | Turns spreadsheet rows into sentences the search understands. |
 | [`QueryCondenser`](#improve-questions-before-searching) | Shortens long questions and completes follow-ups before searching. |
-| [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, and starts or stops it. |
+| [`OllamaClient`, `OllamaLauncher`](#talk-to-ollama) | Talks to Ollama, lets the AI call your functions (tool calling), and starts or stops Ollama. |
 | [`SimilarityRanker`](#find-the-best-pieces) | Finds the pieces closest in meaning to a question. |
 | [`VectorStore`, `InMemoryVectorStore`](#keep-pieces-in-a-database) | Where the ranker keeps pieces: in memory, or in your own database. |
 
