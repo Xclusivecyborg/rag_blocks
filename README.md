@@ -1,23 +1,27 @@
 # rag_blocks
 
-Let an AI answer questions about **your own documents**, in pure Dart,
-entirely on your own computer. No cloud account, no API key, and your files
-never leave the machine. The AI runs through [Ollama](https://ollama.com), a
-free app for running AI models locally.
+Building blocks for RAG in pure Dart. Use them to let an AI answer
+questions from **your own documents**, running entirely on your own
+computer.
 
-## How it works
+Your files never leave the machine, and there's no cloud account or API key
+to set up. By default the models run in [Ollama](https://ollama.com), a free
+app for running AI models locally. As in [LangChain](https://www.langchain.com)
+for Python, each step is a separate piece, so you use only the ones you need.
 
-A chat AI has never seen your documents, so if you ask it about your returns
-policy it will guess. The fix, known as **RAG**, works like an open-book exam:
+## What RAG is
 
-1. **Look it up:** find the few passages in your files that relate to the
+Ask a chat AI about your shop's returns policy and it will guess, because it
+has never seen your documents. **RAG** (retrieval-augmented generation) fixes
+that the way an open-book exam does:
+
+1. **Look it up.** Find the few passages in your files that relate to the
    question.
-2. **Hand them over:** include those passages in the message to the AI.
-3. **Answer from them:** tell the AI to answer using only those passages.
+2. **Hand them over.** Put those passages in the message to the AI.
+3. **Answer from them.** Tell the AI to answer using only those passages.
 
-This package gives you each step as a separate building block, like
-[LangChain](https://www.langchain.com) does in Python. Use only the ones you
-need.
+The [quick start](#quick-start) builds all three steps in one short program,
+and [the blocks](#the-blocks) lists each piece.
 
 ## Setup
 
