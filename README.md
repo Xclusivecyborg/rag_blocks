@@ -177,6 +177,31 @@ await for (final piece in ollama.chatStream(model: 'llama3.2', messages: message
 }
 ```
 
+The model can also call your own functions. Describe each one as a `Tool`;
+when the model wants it, the reply carries `toolCalls` instead of text. Run
+them, send each result back, and ask again:
+
+```dart
+final lookup = Tool(
+  name: 'order_status',
+  description: 'Look up the status of an order by its number.',
+  parameters: {
+    'type': 'object',
+    'required': ['order'],
+    'properties': {
+      'order': {'type': 'string'},
+    },
+  },
+);
+final reply = await ollama.chat(model: 'gpt-oss', messages: messages, tools: [lookup]);
+for (final call in reply.toolCalls) {
+  messages
+    ..add(ChatMessage('assistant', '', toolCalls: [call]))
+    ..add(ChatMessage.toolResult(call, statusOf(call.arguments['order'])));
+}
+// Ask again with the results to get the answer.
+```
+
 `OllamaLauncher` starts and stops Ollama, for when you want your own
 "Start" and "Stop" buttons. `OllamaClient.connect()` already uses it.
 
