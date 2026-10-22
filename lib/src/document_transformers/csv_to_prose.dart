@@ -1,4 +1,4 @@
-import '../tables/csv_table.dart';
+import 'csv_grid.dart';
 
 /// Rewrites CSV rows as labelled sentences, one record per paragraph.
 ///

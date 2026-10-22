@@ -16,6 +16,7 @@
 library;
 
 export 'src/document_loaders/directory_loader.dart';
+export 'src/document_transformers/csv_grid.dart';
 export 'src/document_transformers/csv_to_prose.dart';
 export 'src/llms/chat_model.dart';
 export 'src/llms/embedder.dart';
